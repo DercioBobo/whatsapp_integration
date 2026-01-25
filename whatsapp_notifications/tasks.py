@@ -234,11 +234,14 @@ def trigger_pending_processing():
     Manually trigger processing of pending messages
     Can be called from admin interface
     """
+    from whatsapp_notifications.api import process_message_log
+
     frappe.enqueue(
-        "whatsapp_notifications.tasks.process_pending_messages",
-        queue="short",
-        now=True
+        process_message_log,
+        log_name=log.name,
+        queue="short"
     )
+
     return {"status": "triggered"}
 
 
@@ -248,11 +251,14 @@ def trigger_retry_processing():
     Manually trigger retry of failed messages
     Can be called from admin interface
     """
+    from whatsapp_notifications.api import process_message_log
+
     frappe.enqueue(
-        "whatsapp_notifications.tasks.retry_failed_messages",
-        queue="short",
-        now=True
+        process_message_log,
+        log_name=log.name,
+        queue="short"
     )
+
     return {"status": "triggered"}
 
 
@@ -262,9 +268,12 @@ def trigger_cleanup():
     Manually trigger log cleanup
     Can be called from admin interface
     """
+    from whatsapp_notifications.api import process_message_log
+
     frappe.enqueue(
-        "whatsapp_notifications.tasks.cleanup_old_logs",
-        queue="long",
-        now=True
+        process_message_log,
+        log_name=log.name,
+        queue="short"
     )
+
     return {"status": "triggered"}

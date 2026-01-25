@@ -171,11 +171,14 @@ def send_notification(phone, message, reference_doctype, reference_name,
     # No delay: queue or send immediately
     if settings.get("queue_enabled"):
         # Use callable to avoid get_attr import issues in workers
+        from whatsapp_notifications.api import process_message_log
+
         frappe.enqueue(
             process_message_log,
             log_name=log.name,
             queue="short"
         )
+
     else:
         process_message_log(log.name)
 
