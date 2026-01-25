@@ -69,7 +69,11 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
     
     # Send immediately or queue
     if queue and settings.get("queue_enabled"):
-        # Message will be processed by scheduled task
+        frappe.enqueue(
+            "whatsapp_notifications.api.process_message_log",
+            log_name=log.name,
+            queue="short"
+        )
         return {"success": True, "message": _("Message queued"), "log": log.name}
     else:
         # Send immediately
@@ -171,11 +175,14 @@ def process_message_log(log_name):
         
         # Make request
         try:
-            response = frappe.make_post_request(
+            from whatsapp_notifications.utils import make_post_request
+
+            response = make_post_request(
                 url,
                 headers=headers,
                 data=json_data
             )
+
             
             # Extract message ID from response
             response_id = None
