@@ -30,8 +30,18 @@ def handle_on_trash(doc, method=None):
     """Handle on_trash event for all DocTypes"""
     process_event(doc, "on_trash")
 
+SYSTEM_DOCTYPES = (
+    "Scheduler Log",
+    "Scheduled Job Type",
+    "Error Log",
+    "RQ Job",
+    "RQ Worker",
+    "Version",
+)
 
 def process_event(doc, event):
+    if doc.doctype in SYSTEM_DOCTYPES:
+        return
     """
     Process a document event and trigger any matching notification rules
     
@@ -41,7 +51,7 @@ def process_event(doc, event):
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_rules_for_doctype
-    
+
     try:
         # Quick check if enabled
         settings = get_settings()
