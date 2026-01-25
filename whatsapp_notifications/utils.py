@@ -369,6 +369,8 @@ def get_customer_phone(customer_name):
     except Exception:
         return None
 
+import frappe
+
 def make_post_request(url, headers=None, data=None, timeout=30):
     """
     Version-safe POST request wrapper for Frappe v13-v15.
@@ -397,3 +399,4 @@ def make_post_request(url, headers=None, data=None, timeout=30):
     try:
         return fn(url, headers=headers, data=data, timeout=timeout)
     except TypeError:
+        return fn(url, headers=headers, data=data)
