@@ -50,7 +50,7 @@ function test_evolution_connection(frm) {
     // Save first to ensure latest values are used
     frm.save().then(() => {
         frappe.call({
-            method: 'whatsapp_notifications.whatsapp_notifications..doctype.evolution_api_settings.evolution_api_settings.test_api_connection',
+            method: 'whatsapp_notifications.doctype.doctype.evolution_api_settings.evolution_api_settings.test_api_connection',
             freeze: true,
             freeze_message: __('Testing connection...'),
             callback: function(r) {

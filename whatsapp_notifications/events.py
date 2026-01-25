@@ -42,8 +42,8 @@ def process_event(doc, event):
         return
 
     # Import paths MUST be valid Python (no "..")
-    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_rules_for_doctype
+    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_rules_for_doctype
 
     try:
         settings = get_settings()
@@ -144,7 +144,7 @@ def process_rule(doc, rule, settings):
 
 def send_notification(phone, message, reference_doctype, reference_name,
                       notification_rule, recipient_name, scheduled_time, settings):
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
+    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.utils import format_phone_number
     from whatsapp_notifications.api import process_message_log
 
