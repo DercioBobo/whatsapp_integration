@@ -369,34 +369,31 @@ def get_customer_phone(customer_name):
     except Exception:
         return None
 
-import frappe
-
 def make_post_request(url, headers=None, data=None, timeout=30):
     """
     Version-safe POST request wrapper for Frappe v13-v15.
-    Handles builds where make_request/make_post_request doesn't accept timeout kwarg.
+    Some builds don't expose frappe.make_post_request.
     """
     fn = None
 
+    # Most reliable path (v13+ in many builds)
     try:
         from frappe.integrations.utils import make_post_request as fn
     except Exception:
         fn = None
 
+    # Some builds expose it in frappe.utils
     if not fn:
         try:
             from frappe.utils import make_post_request as fn
         except Exception:
             fn = None
 
+    # Rare: available as frappe.make_post_request
     if not fn and hasattr(frappe, "make_post_request"):
         fn = frappe.make_post_request
 
     if not fn:
         raise Exception("make_post_request is not available in this Frappe build")
 
-    # Try passing timeout, fallback if not supported
-    try:
-        return fn(url, headers=headers, data=data, timeout=timeout)
-    except TypeError:
-        return fn(url, headers=headers, data=data)
+    return fn(url, headers=headers, data=data, timeout=timeout)
