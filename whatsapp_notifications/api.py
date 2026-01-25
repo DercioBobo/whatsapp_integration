@@ -35,8 +35,8 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
             }
         });
     """
-    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
+    from whatsapp_notifications.whatsapp_notifications..doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications..doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.utils import format_phone_number
     
     # Validate inputs
@@ -101,8 +101,8 @@ def send_whatsapp_notification(phone, message, reference_doctype=None, reference
     Returns:
         dict: Result with success status
     """
-    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
+    from whatsapp_notifications.whatsapp_notifications..doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications..doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.utils import format_phone_number
     
     settings = get_settings()
@@ -143,7 +143,7 @@ def process_message_log(log_name):
     Returns:
         dict: Result with success status
     """
-    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications..doctype.evolution_api_settings.evolution_api_settings import get_settings
     
     try:
         log = frappe.get_doc("WhatsApp Message Log", log_name)
@@ -247,7 +247,7 @@ def get_notification_stats():
     Returns:
         dict: Statistics
     """
-    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_message_stats
+    from whatsapp_notifications.whatsapp_notifications..doctype.whatsapp_message_log.whatsapp_message_log import get_message_stats
     return get_message_stats()
 
 
