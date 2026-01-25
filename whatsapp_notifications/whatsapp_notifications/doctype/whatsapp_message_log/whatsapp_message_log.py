@@ -161,7 +161,7 @@ def get_failed_messages_for_retry(limit=20):
     Returns:
         list: List of WhatsApp Message Log names
     """
-    from whatsapp_notifications.doctype.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.evolution_api_settings.evolution_api_settings import get_settings
     
     settings = get_settings()
     max_retries = settings.get("max_retries", 3)

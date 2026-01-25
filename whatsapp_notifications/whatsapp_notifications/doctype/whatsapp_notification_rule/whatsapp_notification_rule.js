@@ -51,7 +51,7 @@ function load_field_options(frm) {
     if (!frm.doc.document_type) return;
     
     frappe.call({
-        method: 'whatsapp_notifications.doctype.doctype.whatsapp_notification_rule.whatsapp_notification_rule.get_doctype_fields',
+        method: 'whatsapp_notifications.whatsapp_notifications.doctype.doctype.whatsapp_notification_rule.whatsapp_notification_rule.get_doctype_fields',
         args: { doctype: frm.doc.document_type },
         callback: function(r) {
             if (r.message) {
@@ -155,7 +155,7 @@ function show_preview_dialog(frm) {
 
 function render_preview(frm, docname, dialog) {
     frappe.call({
-        method: 'whatsapp_notifications.doctype.doctype.whatsapp_notification_rule.whatsapp_notification_rule.preview_message',
+        method: 'whatsapp_notifications.whatsapp_notifications.doctype.doctype.whatsapp_notification_rule.whatsapp_notification_rule.preview_message',
         args: {
             rule_name: frm.doc.name,
             docname: docname
@@ -218,7 +218,7 @@ function show_test_dialog(frm) {
         primary_action: function(values) {
             // First preview the message
             frappe.call({
-                method: 'whatsapp_notifications.doctype.doctype.whatsapp_notification_rule.whatsapp_notification_rule.preview_message',
+                method: 'whatsapp_notifications.whatsapp_notifications.doctype.doctype.whatsapp_notification_rule.whatsapp_notification_rule.preview_message',
                 args: {
                     rule_name: frm.doc.name,
                     docname: values.test_docname
