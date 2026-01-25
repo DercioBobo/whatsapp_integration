@@ -126,7 +126,7 @@ def process_rule(doc, rule, settings):
         try:
             # Get recipient name if available
             recipient_name = get_recipient_name(doc, rule.phone_field)
-            
+
             send_notification(
                 phone=phone,
                 message=message,
@@ -206,12 +206,18 @@ def send_notification(phone, message, reference_doctype, reference_name,
     )
     
     # If no delay and queue disabled, send immediately
-    if not scheduled_time and not settings.get("queue_enabled"):
-        frappe.enqueue(
-            "whatsapp_notifications.api.process_message_log",
-            log_name=log.name,
-            queue="short"
-        )
+    # If no delay:
+    if not scheduled_time:
+        if settings.get("queue_enabled"):
+            frappe.enqueue(
+                "whatsapp_notifications.api.process_message_log",
+                log_name=log.name,
+                queue="short"
+            )
+        else:
+            # send synchronously
+            process_message_log(log.name)
+
 
 
 def get_event_name(event_label):

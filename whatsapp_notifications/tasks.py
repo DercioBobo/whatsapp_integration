@@ -73,6 +73,7 @@ def process_pending_messages():
             "WhatsApp Queue Error"
         )
 
+from frappe.utils import now_datetime, add_to_date
 
 def retry_failed_messages():
     """
@@ -88,18 +89,15 @@ def retry_failed_messages():
 
     try:
         settings = get_settings()
-
         if not settings or not settings.get("enabled"):
             return
 
-        # How many to process per run
         limit = 20
 
-        # Retry "Failed" (your existing logic)
+        # Retry Failed (your existing function)
         failed_names = get_failed_messages_for_retry(limit=limit) or []
 
-        # Retry stale "Pending/Queued" in case worker didn't process them
-        # Default stale window: 10 minutes
+        # Retry stale Pending/Queued (default stale window: 10 minutes)
         stale_minutes = 10
         cutoff = add_to_date(now_datetime(), minutes=-stale_minutes)
 
@@ -114,10 +112,9 @@ def retry_failed_messages():
             order_by="modified asc",
         ) or []
 
-        # Merge unique, keep order (failed first)
+        # Merge unique
         to_process = []
         seen = {}
-
         for n in failed_names + stale_names:
             if n and not seen.get(n):
                 to_process.append(n)
@@ -130,7 +127,6 @@ def retry_failed_messages():
 
         for msg_name in to_process:
             try:
-                # Re-read current status & retry_count
                 row = frappe.db.get_value(
                     "WhatsApp Message Log",
                     msg_name,
@@ -141,32 +137,30 @@ def retry_failed_messages():
                 current_status = row.get("status")
                 retry_count = row.get("retry_count") or 0
 
-                # Optional: if your doctype has max_retry, you can enforce here too
-                # max_retry = settings.get("max_retry_count") or 3
-
-                # Only attempt if message is still in a retryable state
                 if current_status not in ("Failed", "Pending", "Queued"):
                     continue
 
-                # Move to Pending and bump retry_count
+                # Set fields individually (reliable across v13-v15)
                 frappe.db.set_value("WhatsApp Message Log", msg_name, "status", "Pending")
                 frappe.db.set_value("WhatsApp Message Log", msg_name, "retry_count", retry_count + 1)
                 frappe.db.set_value("WhatsApp Message Log", msg_name, "error_message", None)
 
-                # Commit before sending (prevents race issues and ensures status is saved)
+                # Commit before processing
                 frappe.db.commit()
 
-                # Process (send)
                 result = process_message_log(msg_name)
 
-                # If process_message_log returns success=False without raising,
-                # keep it visible in logs by marking failed if still "Sending"/"Pending"
+                # If process returns failure without raising, mark failed
                 if isinstance(result, dict) and not result.get("success"):
-                    # Do not override if process_message_log already marked Failed/Sent
                     latest = frappe.db.get_value("WhatsApp Message Log", msg_name, "status")
                     if latest in ("Pending", "Sending"):
                         frappe.db.set_value("WhatsApp Message Log", msg_name, "status", "Failed")
-                        frappe.db.set_value("WhatsApp Message Log", msg_name, "error_message", result.get("error") or "Unknown error")
+                        frappe.db.set_value(
+                            "WhatsApp Message Log",
+                            msg_name,
+                            "error_message",
+                            result.get("error") or "Unknown error"
+                        )
                         frappe.db.commit()
 
                 retried += 1
@@ -176,7 +170,6 @@ def retry_failed_messages():
                     "Error retrying message " + str(msg_name) + ": " + str(e),
                     "WhatsApp Retry Error"
                 )
-                # Try to ensure it's marked failed so it doesn't sit in limbo
                 try:
                     latest = frappe.db.get_value("WhatsApp Message Log", msg_name, "status")
                     if latest in ("Pending", "Sending"):
