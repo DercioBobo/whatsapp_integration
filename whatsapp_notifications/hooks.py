@@ -57,9 +57,9 @@ app_include_js = "/assets/whatsapp_notifications/js/whatsapp_notifications.js"
 # Installation
 # ------------
 
-# before_install = "whatsapp_notifications.install.before_install"
-after_install = "whatsapp_notifications.install.after_install"
-after_migrate = "whatsapp_notifications.install.after_migrate"
+# before_install = "whatsapp_notifications.whatsapp_notifications.install.before_install"
+after_install = "whatsapp_notifications.whatsapp_notifications.install.after_install"
+after_migrate = "whatsapp_notifications.whatsapp_notifications.install.after_migrate"
 
 # Uninstallation
 # ------------
@@ -103,11 +103,11 @@ after_migrate = "whatsapp_notifications.install.after_migrate"
 
 doc_events = {
     "*": {
-        "after_insert": "whatsapp_notifications.events.handle_after_insert",
-        "on_update": "whatsapp_notifications.events.handle_on_update",
-        "on_submit": "whatsapp_notifications.events.handle_on_submit",
-        "on_cancel": "whatsapp_notifications.events.handle_on_cancel",
-        "on_trash": "whatsapp_notifications.events.handle_on_trash",
+        "after_insert": "whatsapp_notifications.whatsapp_notifications.events.handle_after_insert",
+        "on_update": "whatsapp_notifications.whatsapp_notifications.events.handle_on_update",
+        "on_submit": "whatsapp_notifications.whatsapp_notifications.events.handle_on_submit",
+        "on_cancel": "whatsapp_notifications.whatsapp_notifications.events.handle_on_cancel",
+        "on_trash": "whatsapp_notifications.whatsapp_notifications.events.handle_on_trash",
     }
 }
 
@@ -118,26 +118,26 @@ scheduler_events = {
     # Run every minute to process pending messages
     "cron": {
         "* * * * *": [
-            "whatsapp_notifications.tasks.process_pending_messages"
+            "whatsapp_notifications.whatsapp_notifications.tasks.process_pending_messages"
         ],
         # Retry failed messages every 5 minutes
         "*/5 * * * *": [
-            "whatsapp_notifications.tasks.retry_failed_messages"
+            "whatsapp_notifications.whatsapp_notifications.tasks.retry_failed_messages"
         ],
         # Cleanup old logs daily at 2 AM
         "0 2 * * *": [
-            "whatsapp_notifications.tasks.cleanup_old_logs"
+            "whatsapp_notifications.whatsapp_notifications.tasks.cleanup_old_logs"
         ]
     },
     # Alternative for older Frappe versions
     "all": [
-        "whatsapp_notifications.tasks.process_pending_messages"
+        "whatsapp_notifications.whatsapp_notifications.tasks.process_pending_messages"
     ],
     "hourly": [
-        "whatsapp_notifications.tasks.retry_failed_messages"
+        "whatsapp_notifications.whatsapp_notifications.tasks.retry_failed_messages"
     ],
     "daily": [
-        "whatsapp_notifications.tasks.cleanup_old_logs"
+        "whatsapp_notifications.whatsapp_notifications.tasks.cleanup_old_logs"
     ]
 }
 

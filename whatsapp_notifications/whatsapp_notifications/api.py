@@ -5,7 +5,58 @@ Compatible with ERPNext v13, v14, and v15
 """
 import frappe
 from frappe import _
-import json
+
+
+def make_http_request(url, method="POST", headers=None, data=None):
+    """
+    Make HTTP request compatible with v13, v14, and v15
+    
+    Args:
+        url: Request URL
+        method: HTTP method
+        headers: Request headers
+        data: Request body (string or dict)
+    
+    Returns:
+        dict: Response data
+    """
+    # Try different methods for compatibility across versions
+    
+    # Method 1: frappe.integrations.utils (v14+)
+    try:
+        from frappe.integrations.utils import make_post_request, make_get_request
+        if method.upper() == "POST":
+            return make_post_request(url, headers=headers, data=data)
+        else:
+            return make_get_request(url, headers=headers)
+    except ImportError:
+        pass
+    except Exception as e:
+        frappe.log_error("integrations.utils failed: " + str(e), "WhatsApp HTTP Debug")
+    
+    # Method 2: frappe.make_post_request (v13)
+    try:
+        if method.upper() == "POST":
+            return frappe.make_post_request(url, headers=headers, data=data)
+        else:
+            return frappe.make_get_request(url, headers=headers)
+    except AttributeError:
+        pass
+    except Exception as e:
+        frappe.log_error("frappe.make_post_request failed: " + str(e), "WhatsApp HTTP Debug")
+    
+    # Method 3: requests library (fallback)
+    try:
+        import requests
+        if method.upper() == "POST":
+            response = requests.post(url, headers=headers, data=data, timeout=30)
+        else:
+            response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        frappe.log_error("requests library failed: " + str(e), "WhatsApp HTTP Debug")
+        raise
 
 
 @frappe.whitelist(allow_guest=False)
@@ -28,16 +79,16 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
     
     Example:
         frappe.call({
-            method: 'whatsapp_notifications.api.send_whatsapp',
+            method: 'whatsapp_notifications.whatsapp_notifications.api.send_whatsapp',
             args: {
                 phone: '841234567',
                 message: 'Hello from ERPNext!'
             }
         });
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
-    from whatsapp_notifications.utils import format_phone_number
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
+    from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
     
     # Validate inputs
     if not phone or not message:
@@ -67,16 +118,9 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
         formatted_phone=formatted_phone
     )
     
-    # Send immediately or queue
+    # Send immediately or queue based on settings
     if queue and settings.get("queue_enabled"):
-        from whatsapp_notifications.api import process_message_log
-
-        frappe.enqueue(
-            process_message_log,
-            log_name=log.name,
-            queue="short"
-        )
-
+        # Message will be processed by scheduled task
         return {"success": True, "message": _("Message queued"), "log": log.name}
     else:
         # Send immediately
@@ -101,9 +145,9 @@ def send_whatsapp_notification(phone, message, reference_doctype=None, reference
     Returns:
         dict: Result with success status
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
-    from whatsapp_notifications.utils import format_phone_number
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
+    from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
     
     settings = get_settings()
     
@@ -143,13 +187,14 @@ def process_message_log(log_name):
     Returns:
         dict: Result with success status
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     
     try:
         log = frappe.get_doc("WhatsApp Message Log", log_name)
         
+        # Only process Pending or Queued messages
         if log.status not in ("Pending", "Queued"):
-            return {"success": False, "error": "Message already processed"}
+            return {"success": False, "error": "Message already processed", "status": log.status}
         
         settings = get_settings()
         
@@ -157,8 +202,9 @@ def process_message_log(log_name):
             log.mark_failed("WhatsApp notifications disabled")
             return {"success": False, "error": "Disabled"}
         
-        # Update status
+        # Update status to Sending
         log.db_set("status", "Sending")
+        frappe.db.commit()
         
         # Build API request
         url = "{}/message/sendText/{}".format(
@@ -171,21 +217,20 @@ def process_message_log(log_name):
             "apikey": settings.get("api_key")
         }
         
-        # Build payload - escape for JSON
-        # This is v13 sandbox compatible (no json.dumps in request)
-        safe_message = log.message.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        # Build payload - escape for JSON (v13 sandbox compatible)
+        safe_message = (
+            log.message
+            .replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        )
         json_data = '{{"number": "{}", "text": "{}"}}'.format(log.formatted_phone, safe_message)
         
-        # Make request
+        # Make request using compatible method
         try:
-            from whatsapp_notifications.utils import make_post_request
-
-            response = make_post_request(
-                url,
-                headers=headers,
-                data=json_data
-            )
-
+            response = make_http_request(url, method="POST", headers=headers, data=json_data)
             
             # Extract message ID from response
             response_id = None
@@ -247,74 +292,5 @@ def get_notification_stats():
     Returns:
         dict: Statistics
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.whatsapp_message_log.whatsapp_message_log import get_message_stats
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_message_stats
     return get_message_stats()
-
-
-# ============================================================
-# V13 Sandbox Compatible API Method
-# ============================================================
-# This section provides a Server Script compatible implementation
-# that can be used as an API method in v13's restricted sandbox
-
-def send_whatsapp_v13_sandbox(phone, message, doctype=None, docname=None):
-    """
-    V13 Sandbox compatible send function
-    Use this in Server Scripts (API type)
-    
-    Server Script Configuration:
-    - Type: API
-    - Method: send_whatsapp
-    - Allow Guest: No
-    
-    Script Content:
-    ```
-    phone = frappe.form_dict.get('phone')
-    message = frappe.form_dict.get('message')
-    doctype = frappe.form_dict.get('doctype')
-    docname = frappe.form_dict.get('docname')
-    
-    if not phone or not message:
-        frappe.throw('Phone and message are required')
-    
-    # Get Evolution API settings
-    api_url = frappe.db.get_single_value('Evolution API Settings', 'api_url')
-    api_key = frappe.db.get_single_value('Evolution API Settings', 'api_key')
-    instance = frappe.db.get_single_value('Evolution API Settings', 'instance_name')
-    country_code = frappe.db.get_single_value('Evolution API Settings', 'default_country_code') or '258'
-    
-    if not api_url or not api_key or not instance:
-        frappe.throw('Evolution API not configured')
-    
-    # Format phone
-    phone = str(phone).replace(' ', '').replace('+', '').replace('-', '')
-    if len(phone) == 9 and phone.startswith('8'):
-        phone = country_code + phone
-    
-    # Send via Evolution API
-    try:
-        url = api_url + '/message/sendText/' + instance
-        
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8',
-            'apikey': api_key
-        }
-        
-        # Escape message for JSON (no f-strings in sandbox)
-        safe_message = message.replace('\\\\', '\\\\\\\\').replace('"', '\\\\"').replace('\\n', '\\\\n')
-        json_data = '{"number": "' + phone + '", "text": "' + safe_message + '"}'
-        
-        response = frappe.make_post_request(
-            url,
-            headers=headers,
-            data=json_data
-        )
-        
-        frappe.response['message'] = {'success': True}
-        
-    except Exception as e:
-        frappe.log_error('WhatsApp Failed: ' + str(e), 'WhatsApp Error')
-        frappe.response['message'] = {'success': False, 'error': str(e)}
-    ```
-    """
-    pass  # This is documentation only

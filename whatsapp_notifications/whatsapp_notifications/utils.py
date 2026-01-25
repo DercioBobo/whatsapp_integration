@@ -42,7 +42,7 @@ def format_phone_number(phone, country_code=None, local_length=None, local_prefi
     
     # Get settings if not provided
     if not country_code or not local_length or not local_prefixes:
-        from whatsapp_notifications.whatsapp_notifications.doctype.doctype.evolution_api_settings.evolution_api_settings import get_settings
+        from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
         settings = get_settings()
         
         country_code = country_code or settings.get("default_country_code", "258")
@@ -238,7 +238,7 @@ def build_message_from_template(template, doc, extra_context=None):
     Returns:
         str: Rendered message
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
     
     context = get_template_context(doc)
     
@@ -368,32 +368,3 @@ def get_customer_phone(customer_name):
         
     except Exception:
         return None
-
-def make_post_request(url, headers=None, data=None, timeout=30):
-    """
-    Version-safe POST request wrapper for Frappe v13-v15.
-    Some builds don't expose frappe.make_post_request.
-    """
-    fn = None
-
-    # Most reliable path (v13+ in many builds)
-    try:
-        from frappe.integrations.utils import make_post_request as fn
-    except Exception:
-        fn = None
-
-    # Some builds expose it in frappe.utils
-    if not fn:
-        try:
-            from frappe.utils import make_post_request as fn
-        except Exception:
-            fn = None
-
-    # Rare: available as frappe.make_post_request
-    if not fn and hasattr(frappe, "make_post_request"):
-        fn = frappe.make_post_request
-
-    if not fn:
-        raise Exception("make_post_request is not available in this Frappe build")
-
-    return fn(url, headers=headers, data=data, timeout=timeout)
