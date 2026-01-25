@@ -212,6 +212,5 @@ fixtures = [
 jinja = {
     "methods": [
         ""whatsapp_notifications.whatsapp_notifications.utils.jinja_methods"
-"
     ]
 }
