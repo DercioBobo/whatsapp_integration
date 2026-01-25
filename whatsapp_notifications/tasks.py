@@ -11,8 +11,8 @@ def process_pending_messages():
     Process pending messages from the queue
     Called every minute by scheduler
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_pending_messages
+    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_pending_messages
     from whatsapp_notifications.api import process_message_log
     
     try:
@@ -83,8 +83,8 @@ def retry_failed_messages():
     Called every 5 minutes by scheduler.
     Compatible with ERPNext/Frappe v13 to v15.
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_failed_messages_for_retry
+    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_failed_messages_for_retry
     from whatsapp_notifications.api import process_message_log
 
     try:
@@ -197,8 +197,8 @@ def cleanup_old_logs():
     Delete old message logs based on retention settings
     Called daily at 2 AM by scheduler
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import cleanup_old_logs as do_cleanup
+    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import cleanup_old_logs as do_cleanup
     
     try:
         settings = get_settings()

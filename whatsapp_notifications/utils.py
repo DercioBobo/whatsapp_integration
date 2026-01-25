@@ -42,7 +42,7 @@ def format_phone_number(phone, country_code=None, local_length=None, local_prefi
     
     # Get settings if not provided
     if not country_code or not local_length or not local_prefixes:
-        from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+        from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
         settings = get_settings()
         
         country_code = country_code or settings.get("default_country_code", "258")
@@ -238,7 +238,7 @@ def build_message_from_template(template, doc, extra_context=None):
     Returns:
         str: Rendered message
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
+    from whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
     
     context = get_template_context(doc)
     

@@ -49,8 +49,8 @@ def process_event(doc, event):
         doc: The document triggering the event
         event: Event type (after_insert, on_update, etc.)
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_rules_for_doctype
+    from whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_rules_for_doctype
 
     try:
         # Quick check if enabled
@@ -190,7 +190,7 @@ def send_notification(phone, message, reference_doctype, reference_name,
         scheduled_time: When to send (None = immediate)
         settings: API settings dict
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
+    from whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.utils import format_phone_number
     from whatsapp_notifications.api import process_message_log
     
