@@ -76,6 +76,7 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
             log_name=log.name,
             queue="short"
         )
+
         return {"success": True, "message": _("Message queued"), "log": log.name}
     else:
         # Send immediately

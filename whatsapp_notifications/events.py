@@ -226,6 +226,7 @@ def send_notification(phone, message, reference_doctype, reference_name,
                 log_name=log.name,
                 queue="short"
             )
+
         else:
             # send synchronously
             process_message_log(log.name)
