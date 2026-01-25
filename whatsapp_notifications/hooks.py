@@ -211,6 +211,7 @@ fixtures = [
 # Add custom Jinja filters/functions for templates
 jinja = {
     "methods": [
-        "whatsapp_notifications.utils.jinja_methods"
+        ""whatsapp_notifications.whatsapp_notifications.utils.jinja_methods"
+"
     ]
 }
