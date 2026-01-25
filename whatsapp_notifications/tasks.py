@@ -76,62 +76,125 @@ def process_pending_messages():
 
 def retry_failed_messages():
     """
-    Retry failed messages that haven't exceeded retry limit
-    Called every 5 minutes by scheduler
+    Retry failed messages that haven't exceeded retry limit.
+    Also retries stale Pending/Queued messages that were never processed.
+
+    Called every 5 minutes by scheduler.
+    Compatible with ERPNext/Frappe v13 to v15.
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_failed_messages_for_retry
     from whatsapp_notifications.api import process_message_log
-    
+
     try:
         settings = get_settings()
-        
-        if not settings.get("enabled"):
+
+        if not settings or not settings.get("enabled"):
             return
-        
-        # Get failed messages eligible for retry
-        messages = get_failed_messages_for_retry(limit=20)
-        
-        if not messages:
+
+        # How many to process per run
+        limit = 20
+
+        # Retry "Failed" (your existing logic)
+        failed_names = get_failed_messages_for_retry(limit=limit) or []
+
+        # Retry stale "Pending/Queued" in case worker didn't process them
+        # Default stale window: 10 minutes
+        stale_minutes = 10
+        cutoff = add_to_date(now_datetime(), minutes=-stale_minutes)
+
+        stale_names = frappe.get_all(
+            "WhatsApp Message Log",
+            filters={
+                "status": ["in", ["Pending", "Queued"]],
+                "modified": ["<", cutoff],
+            },
+            pluck="name",
+            limit=limit,
+            order_by="modified asc",
+        ) or []
+
+        # Merge unique, keep order (failed first)
+        to_process = []
+        seen = {}
+
+        for n in failed_names + stale_names:
+            if n and not seen.get(n):
+                to_process.append(n)
+                seen[n] = 1
+
+        if not to_process:
             return
-        
+
         retried = 0
-        
-        for msg_name in messages:
+
+        for msg_name in to_process:
             try:
-                # Reset status and increment retry count
-                frappe.db.set_value(
+                # Re-read current status & retry_count
+                row = frappe.db.get_value(
                     "WhatsApp Message Log",
                     msg_name,
-                    {
-                        "status": "Pending",
-                        "retry_count": frappe.db.get_value(
-                            "WhatsApp Message Log", msg_name, "retry_count"
-                        ) + 1,
-                        "error_message": None
-                    }
-                )
-                
-                process_message_log(msg_name)
+                    ["status", "retry_count"],
+                    as_dict=1
+                ) or {}
+
+                current_status = row.get("status")
+                retry_count = row.get("retry_count") or 0
+
+                # Optional: if your doctype has max_retry, you can enforce here too
+                # max_retry = settings.get("max_retry_count") or 3
+
+                # Only attempt if message is still in a retryable state
+                if current_status not in ("Failed", "Pending", "Queued"):
+                    continue
+
+                # Move to Pending and bump retry_count
+                frappe.db.set_value("WhatsApp Message Log", msg_name, "status", "Pending")
+                frappe.db.set_value("WhatsApp Message Log", msg_name, "retry_count", retry_count + 1)
+                frappe.db.set_value("WhatsApp Message Log", msg_name, "error_message", None)
+
+                # Commit before sending (prevents race issues and ensures status is saved)
+                frappe.db.commit()
+
+                # Process (send)
+                result = process_message_log(msg_name)
+
+                # If process_message_log returns success=False without raising,
+                # keep it visible in logs by marking failed if still "Sending"/"Pending"
+                if isinstance(result, dict) and not result.get("success"):
+                    # Do not override if process_message_log already marked Failed/Sent
+                    latest = frappe.db.get_value("WhatsApp Message Log", msg_name, "status")
+                    if latest in ("Pending", "Sending"):
+                        frappe.db.set_value("WhatsApp Message Log", msg_name, "status", "Failed")
+                        frappe.db.set_value("WhatsApp Message Log", msg_name, "error_message", result.get("error") or "Unknown error")
+                        frappe.db.commit()
+
                 retried += 1
-                
+
             except Exception as e:
                 frappe.log_error(
-                    "Error retrying message {}: {}".format(msg_name, str(e)),
+                    "Error retrying message " + str(msg_name) + ": " + str(e),
                     "WhatsApp Retry Error"
                 )
-        
+                # Try to ensure it's marked failed so it doesn't sit in limbo
+                try:
+                    latest = frappe.db.get_value("WhatsApp Message Log", msg_name, "status")
+                    if latest in ("Pending", "Sending"):
+                        frappe.db.set_value("WhatsApp Message Log", msg_name, "status", "Failed")
+                        frappe.db.set_value("WhatsApp Message Log", msg_name, "error_message", str(e))
+                        frappe.db.commit()
+                except Exception:
+                    pass
+
         if settings.get("enable_debug_logging") and retried > 0:
             frappe.log_error(
-                "Retried {} failed messages".format(retried),
+                "Retried " + str(retried) + " messages (Failed + stale Pending/Queued)",
                 "WhatsApp Debug"
             )
-        
-        frappe.db.commit()
-        
+
     except Exception as e:
         frappe.log_error(
-            "WhatsApp Retry Error: {}".format(str(e)),
+            "WhatsApp Retry Error: " + str(e),
             "WhatsApp Retry Error"
         )
 
