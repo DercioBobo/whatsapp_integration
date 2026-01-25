@@ -69,8 +69,10 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
     
     # Send immediately or queue
     if queue and settings.get("queue_enabled"):
+        from whatsapp_notifications.api import process_message_log
+
         frappe.enqueue(
-            "whatsapp_notifications.api.process_message_log",
+            process_message_log,
             log_name=log.name,
             queue="short"
         )

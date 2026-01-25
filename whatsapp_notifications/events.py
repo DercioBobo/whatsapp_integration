@@ -219,8 +219,10 @@ def send_notification(phone, message, reference_doctype, reference_name,
     # If no delay:
     if not scheduled_time:
         if settings.get("queue_enabled"):
+            from whatsapp_notifications.api import process_message_log
+
             frappe.enqueue(
-                "whatsapp_notifications.api.process_message_log",
+                process_message_log,
                 log_name=log.name,
                 queue="short"
             )
