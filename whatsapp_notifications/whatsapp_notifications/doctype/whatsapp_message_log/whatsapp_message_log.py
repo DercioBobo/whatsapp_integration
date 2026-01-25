@@ -102,7 +102,8 @@ def create_message_log(phone, message, reference_doctype=None, reference_name=No
     Returns:
         WhatsApp Message Log document
     """
-    from whatsapp_notifications.utils import format_phone_number
+    from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
+
     
     # Format phone if not already formatted
     if not formatted_phone:
