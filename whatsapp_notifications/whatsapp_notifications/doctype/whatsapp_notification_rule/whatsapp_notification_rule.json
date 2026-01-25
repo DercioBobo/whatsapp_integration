@@ -1,0 +1,240 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "field:rule_name",
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "enabled",
+        "rule_name",
+        "section_trigger",
+        "document_type",
+        "event",
+        "column_break_trigger",
+        "condition",
+        "value_changed",
+        "section_recipient",
+        "phone_field",
+        "recipient_type",
+        "column_break_recipient",
+        "fixed_recipients",
+        "section_message",
+        "message_template",
+        "section_owner_notification",
+        "notify_owner",
+        "owner_message_template",
+        "section_advanced",
+        "priority",
+        "delay_seconds",
+        "column_break_advanced",
+        "send_once",
+        "active_days",
+        "active_hours_start",
+        "active_hours_end"
+    ],
+    "fields": [
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled"
+        },
+        {
+            "fieldname": "rule_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Rule Name",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "section_trigger",
+            "fieldtype": "Section Break",
+            "label": "Trigger Configuration"
+        },
+        {
+            "fieldname": "document_type",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Document Type",
+            "options": "DocType",
+            "reqd": 1,
+            "description": "DocType that triggers this notification"
+        },
+        {
+            "fieldname": "event",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Event",
+            "options": "After Insert\nOn Update\nOn Submit\nOn Cancel\nOn Change\nOn Trash",
+            "reqd": 1,
+            "default": "After Insert"
+        },
+        {
+            "fieldname": "column_break_trigger",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "condition",
+            "fieldtype": "Code",
+            "label": "Condition (Optional)",
+            "description": "Jinja2 condition. Send only if evaluates to True. Example: {{ doc.status == 'Approved' }}",
+            "options": "Jinja"
+        },
+        {
+            "fieldname": "value_changed",
+            "fieldtype": "Data",
+            "label": "Value Changed (for On Change)",
+            "description": "Field name to monitor for changes. Only used with 'On Change' event.",
+            "depends_on": "eval:doc.event=='On Change'"
+        },
+        {
+            "fieldname": "section_recipient",
+            "fieldtype": "Section Break",
+            "label": "Recipient Configuration"
+        },
+        {
+            "fieldname": "phone_field",
+            "fieldtype": "Data",
+            "label": "Phone Field",
+            "description": "Document field containing recipient phone number (e.g., mobile_no, phone, contact_mobile)"
+        },
+        {
+            "fieldname": "recipient_type",
+            "fieldtype": "Select",
+            "label": "Recipient Type",
+            "options": "Field Value\nFixed Number\nBoth",
+            "default": "Field Value",
+            "description": "How to determine recipients"
+        },
+        {
+            "fieldname": "column_break_recipient",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "fixed_recipients",
+            "fieldtype": "Small Text",
+            "label": "Fixed Recipients",
+            "description": "Comma-separated phone numbers to always receive this notification",
+            "depends_on": "eval:doc.recipient_type=='Fixed Number' || doc.recipient_type=='Both'"
+        },
+        {
+            "fieldname": "section_message",
+            "fieldtype": "Section Break",
+            "label": "Message Template"
+        },
+        {
+            "fieldname": "message_template",
+            "fieldtype": "Code",
+            "label": "Message Template",
+            "reqd": 1,
+            "options": "Jinja",
+            "description": "Jinja2 template for the message. Use {{ doc.fieldname }} to include document fields."
+        },
+        {
+            "fieldname": "section_owner_notification",
+            "fieldtype": "Section Break",
+            "label": "Business Owner Notification",
+            "collapsible": 1
+        },
+        {
+            "default": "0",
+            "fieldname": "notify_owner",
+            "fieldtype": "Check",
+            "label": "Also Notify Business Owner",
+            "description": "Send a separate notification to the business owner configured in Evolution API Settings"
+        },
+        {
+            "fieldname": "owner_message_template",
+            "fieldtype": "Code",
+            "label": "Owner Message Template",
+            "options": "Jinja",
+            "description": "Separate template for owner notification. If empty, uses the same template.",
+            "depends_on": "notify_owner"
+        },
+        {
+            "fieldname": "section_advanced",
+            "fieldtype": "Section Break",
+            "label": "Advanced Options",
+            "collapsible": 1
+        },
+        {
+            "default": "1",
+            "fieldname": "priority",
+            "fieldtype": "Select",
+            "label": "Priority",
+            "options": "1 - High\n2 - Medium\n3 - Low",
+            "description": "Higher priority messages are sent first"
+        },
+        {
+            "default": "0",
+            "fieldname": "delay_seconds",
+            "fieldtype": "Int",
+            "label": "Delay (seconds)",
+            "description": "Wait this many seconds before sending (useful for 'save and continue editing' scenarios)"
+        },
+        {
+            "fieldname": "column_break_advanced",
+            "fieldtype": "Column Break"
+        },
+        {
+            "default": "0",
+            "fieldname": "send_once",
+            "fieldtype": "Check",
+            "label": "Send Only Once Per Document",
+            "description": "Don't send again if this rule already sent for this document"
+        },
+        {
+            "fieldname": "active_days",
+            "fieldtype": "Data",
+            "label": "Active Days",
+            "description": "Comma-separated days (Mon,Tue,Wed,Thu,Fri,Sat,Sun). Empty = all days.",
+            "placeholder": "Mon,Tue,Wed,Thu,Fri"
+        },
+        {
+            "fieldname": "active_hours_start",
+            "fieldtype": "Time",
+            "label": "Active Hours Start",
+            "description": "Only send during these hours"
+        },
+        {
+            "fieldname": "active_hours_end",
+            "fieldtype": "Time",
+            "label": "Active Hours End"
+        }
+    ],
+    "index_web_pages_for_search": 1,
+    "links": [
+        {
+            "link_doctype": "WhatsApp Message Log",
+            "link_fieldname": "notification_rule"
+        }
+    ],
+    "modified": "2024-01-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "WhatsApp Notifications",
+    "name": "WhatsApp Notification Rule",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "quick_entry": 0,
+    "search_fields": "document_type,event",
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 1
+}

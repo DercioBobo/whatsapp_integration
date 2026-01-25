@@ -1,0 +1,215 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "WAMSG-.#####",
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "status",
+        "section_recipient",
+        "phone",
+        "formatted_phone",
+        "column_break_recipient",
+        "recipient_name",
+        "section_message",
+        "message",
+        "section_reference",
+        "reference_doctype",
+        "reference_name",
+        "column_break_reference",
+        "notification_rule",
+        "section_response",
+        "response_id",
+        "response_data",
+        "column_break_response",
+        "error_message",
+        "section_tracking",
+        "retry_count",
+        "scheduled_time",
+        "column_break_tracking",
+        "sent_at",
+        "delivered_at"
+    ],
+    "fields": [
+        {
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Status",
+            "options": "Pending\nQueued\nSending\nSent\nDelivered\nRead\nFailed\nCancelled",
+            "default": "Pending",
+            "reqd": 1
+        },
+        {
+            "fieldname": "section_recipient",
+            "fieldtype": "Section Break",
+            "label": "Recipient"
+        },
+        {
+            "fieldname": "phone",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Phone (Original)",
+            "read_only": 1
+        },
+        {
+            "fieldname": "formatted_phone",
+            "fieldtype": "Data",
+            "label": "Phone (Formatted)",
+            "read_only": 1,
+            "description": "Phone number as sent to API"
+        },
+        {
+            "fieldname": "column_break_recipient",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "recipient_name",
+            "fieldtype": "Data",
+            "label": "Recipient Name",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_message",
+            "fieldtype": "Section Break",
+            "label": "Message"
+        },
+        {
+            "fieldname": "message",
+            "fieldtype": "Long Text",
+            "in_list_view": 1,
+            "label": "Message",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_reference",
+            "fieldtype": "Section Break",
+            "label": "Reference"
+        },
+        {
+            "fieldname": "reference_doctype",
+            "fieldtype": "Link",
+            "in_standard_filter": 1,
+            "label": "Reference DocType",
+            "options": "DocType",
+            "read_only": 1
+        },
+        {
+            "fieldname": "reference_name",
+            "fieldtype": "Dynamic Link",
+            "label": "Reference Name",
+            "options": "reference_doctype",
+            "read_only": 1
+        },
+        {
+            "fieldname": "column_break_reference",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "notification_rule",
+            "fieldtype": "Link",
+            "in_standard_filter": 1,
+            "label": "Notification Rule",
+            "options": "WhatsApp Notification Rule",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_response",
+            "fieldtype": "Section Break",
+            "label": "API Response",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "response_id",
+            "fieldtype": "Data",
+            "label": "Response ID",
+            "read_only": 1,
+            "description": "Message ID from Evolution API"
+        },
+        {
+            "fieldname": "response_data",
+            "fieldtype": "Code",
+            "label": "Response Data",
+            "options": "JSON",
+            "read_only": 1
+        },
+        {
+            "fieldname": "column_break_response",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "error_message",
+            "fieldtype": "Small Text",
+            "label": "Error Message",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_tracking",
+            "fieldtype": "Section Break",
+            "label": "Tracking"
+        },
+        {
+            "fieldname": "retry_count",
+            "fieldtype": "Int",
+            "label": "Retry Count",
+            "default": "0",
+            "read_only": 1
+        },
+        {
+            "fieldname": "scheduled_time",
+            "fieldtype": "Datetime",
+            "label": "Scheduled Time",
+            "read_only": 1,
+            "description": "When the message is scheduled to be sent"
+        },
+        {
+            "fieldname": "column_break_tracking",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "sent_at",
+            "fieldtype": "Datetime",
+            "label": "Sent At",
+            "read_only": 1
+        },
+        {
+            "fieldname": "delivered_at",
+            "fieldtype": "Datetime",
+            "label": "Delivered At",
+            "read_only": 1
+        }
+    ],
+    "in_create": 1,
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2024-01-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "WhatsApp Notifications",
+    "name": "WhatsApp Message Log",
+    "naming_rule": "Expression (old style)",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1
+        },
+        {
+            "export": 1,
+            "read": 1,
+            "report": 1,
+            "role": "All"
+        }
+    ],
+    "quick_entry": 0,
+    "search_fields": "phone,reference_name,status",
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "track_changes": 0
+}

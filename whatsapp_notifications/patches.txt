@@ -1,0 +1,6 @@
+# Patches for WhatsApp Notifications
+# Format: app_name.patches.patch_module_name
+# Patches run in order during bench migrate
+
+# v1.0.0 initial patches
+whatsapp_notifications.patches.v1_0.create_default_settings

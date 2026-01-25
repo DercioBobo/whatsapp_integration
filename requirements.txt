@@ -1,0 +1,3 @@
+# WhatsApp Notifications for ERPNext
+# No external dependencies required - uses Frappe's built-in HTTP methods
+frappe

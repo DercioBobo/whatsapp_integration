@@ -1,0 +1,1 @@
+# WhatsApp Notifications DocTypes

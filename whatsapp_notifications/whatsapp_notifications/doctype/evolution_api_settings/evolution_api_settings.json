@@ -1,0 +1,224 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "enabled",
+        "section_connection",
+        "api_url",
+        "api_key",
+        "instance_name",
+        "column_break_connection",
+        "connection_status",
+        "last_checked",
+        "section_defaults",
+        "default_country_code",
+        "local_number_length",
+        "local_number_prefixes",
+        "column_break_defaults",
+        "owner_number",
+        "section_advanced",
+        "timeout_seconds",
+        "max_retries",
+        "retry_delay_minutes",
+        "column_break_advanced",
+        "log_retention_days",
+        "enable_debug_logging",
+        "section_rate_limiting",
+        "enable_rate_limiting",
+        "messages_per_minute",
+        "column_break_rate",
+        "queue_enabled"
+    ],
+    "fields": [
+        {
+            "default": "0",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled",
+            "description": "Master switch to enable/disable WhatsApp notifications"
+        },
+        {
+            "fieldname": "section_connection",
+            "fieldtype": "Section Break",
+            "label": "Evolution API Connection"
+        },
+        {
+            "fieldname": "api_url",
+            "fieldtype": "Data",
+            "label": "API URL",
+            "reqd": 0,
+            "description": "Evolution API base URL (e.g., http://your-server:8080/evolution)",
+            "placeholder": "http://localhost:8080/evolution"
+        },
+        {
+            "fieldname": "api_key",
+            "fieldtype": "Password",
+            "label": "API Key",
+            "description": "Evolution API authentication key"
+        },
+        {
+            "fieldname": "instance_name",
+            "fieldtype": "Data",
+            "label": "Instance Name",
+            "description": "WhatsApp instance name in Evolution API"
+        },
+        {
+            "fieldname": "column_break_connection",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "connection_status",
+            "fieldtype": "Data",
+            "label": "Connection Status",
+            "read_only": 1,
+            "description": "Last connection test result"
+        },
+        {
+            "fieldname": "last_checked",
+            "fieldtype": "Datetime",
+            "label": "Last Checked",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_defaults",
+            "fieldtype": "Section Break",
+            "label": "Phone Number Settings"
+        },
+        {
+            "default": "258",
+            "fieldname": "default_country_code",
+            "fieldtype": "Data",
+            "label": "Default Country Code",
+            "description": "Country code to prepend to local numbers (e.g., 258 for Mozambique)"
+        },
+        {
+            "default": "9",
+            "fieldname": "local_number_length",
+            "fieldtype": "Int",
+            "label": "Local Number Length",
+            "description": "Expected length of local phone numbers (without country code)"
+        },
+        {
+            "default": "82,83,84,85,86,87",
+            "fieldname": "local_number_prefixes",
+            "fieldtype": "Data",
+            "label": "Local Number Prefixes",
+            "description": "Comma-separated list of valid local number prefixes (e.g., 82,83,84)"
+        },
+        {
+            "fieldname": "column_break_defaults",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "owner_number",
+            "fieldtype": "Data",
+            "label": "Business Owner Number",
+            "description": "WhatsApp number to receive admin notifications"
+        },
+        {
+            "fieldname": "section_advanced",
+            "fieldtype": "Section Break",
+            "label": "Advanced Settings",
+            "collapsible": 1
+        },
+        {
+            "default": "30",
+            "fieldname": "timeout_seconds",
+            "fieldtype": "Int",
+            "label": "Timeout (seconds)",
+            "description": "API request timeout in seconds"
+        },
+        {
+            "default": "3",
+            "fieldname": "max_retries",
+            "fieldtype": "Int",
+            "label": "Max Retries",
+            "description": "Maximum retry attempts for failed messages"
+        },
+        {
+            "default": "5",
+            "fieldname": "retry_delay_minutes",
+            "fieldtype": "Int",
+            "label": "Retry Delay (minutes)",
+            "description": "Minutes to wait before retrying failed messages"
+        },
+        {
+            "fieldname": "column_break_advanced",
+            "fieldtype": "Column Break"
+        },
+        {
+            "default": "30",
+            "fieldname": "log_retention_days",
+            "fieldtype": "Int",
+            "label": "Log Retention (days)",
+            "description": "Days to keep message logs (0 = forever)"
+        },
+        {
+            "default": "0",
+            "fieldname": "enable_debug_logging",
+            "fieldtype": "Check",
+            "label": "Enable Debug Logging",
+            "description": "Log detailed debug information (for troubleshooting)"
+        },
+        {
+            "fieldname": "section_rate_limiting",
+            "fieldtype": "Section Break",
+            "label": "Rate Limiting",
+            "collapsible": 1
+        },
+        {
+            "default": "0",
+            "fieldname": "enable_rate_limiting",
+            "fieldtype": "Check",
+            "label": "Enable Rate Limiting",
+            "description": "Limit message sending rate to avoid WhatsApp blocks"
+        },
+        {
+            "default": "20",
+            "fieldname": "messages_per_minute",
+            "fieldtype": "Int",
+            "label": "Messages Per Minute",
+            "description": "Maximum messages to send per minute",
+            "depends_on": "enable_rate_limiting"
+        },
+        {
+            "fieldname": "column_break_rate",
+            "fieldtype": "Column Break"
+        },
+        {
+            "default": "1",
+            "fieldname": "queue_enabled",
+            "fieldtype": "Check",
+            "label": "Enable Message Queue",
+            "description": "Queue messages for background processing (recommended for high volume)"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "issingle": 1,
+    "links": [],
+    "modified": "2024-01-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "WhatsApp Notifications",
+    "name": "Evolution API Settings",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "print": 1,
+            "read": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "quick_entry": 0,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 1
+}

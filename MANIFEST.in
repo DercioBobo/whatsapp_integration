@@ -1,0 +1,19 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+include LICENSE
+recursive-include whatsapp_notifications *.css
+recursive-include whatsapp_notifications *.csv
+recursive-include whatsapp_notifications *.html
+recursive-include whatsapp_notifications *.ico
+recursive-include whatsapp_notifications *.js
+recursive-include whatsapp_notifications *.json
+recursive-include whatsapp_notifications *.md
+recursive-include whatsapp_notifications *.png
+recursive-include whatsapp_notifications *.py
+recursive-include whatsapp_notifications *.svg
+recursive-include whatsapp_notifications *.txt
+recursive-exclude whatsapp_notifications *.pyc
