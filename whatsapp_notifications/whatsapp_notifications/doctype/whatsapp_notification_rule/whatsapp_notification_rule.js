@@ -8,20 +8,26 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
             frm.add_custom_button(__('Preview Message'), function() {
                 show_preview_dialog(frm);
             }, __('Actions'));
-            
+
             frm.add_custom_button(__('Test Send'), function() {
                 show_test_dialog(frm);
             }, __('Actions'));
-            
+
             frm.add_custom_button(__('View Logs'), function() {
                 frappe.set_route('List', 'WhatsApp Message Log', {
                     notification_rule: frm.doc.name
                 });
             }, __('Actions'));
         }
-        
+
         // Template help
         setup_template_help(frm);
+
+        // Initialize group field visibility
+        let needs_group = ['Group', 'Phone and Group'].includes(frm.doc.recipient_type);
+        frm.toggle_display('group_id', needs_group);
+        frm.toggle_display('group_name', needs_group && frm.doc.group_id);
+        frm.toggle_display('select_group_button', needs_group);
     },
     
     document_type: function(frm) {
@@ -41,9 +47,28 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
     },
     
     recipient_type: function(frm) {
-        // Show/hide phone_field based on type
-        frm.toggle_reqd('phone_field', frm.doc.recipient_type !== 'Fixed Number');
-        frm.toggle_reqd('fixed_recipients', frm.doc.recipient_type !== 'Field Value');
+        // Determine which fields to require based on recipient type
+        let needs_phone_field = ['Field Value', 'Both', 'Phone and Group'].includes(frm.doc.recipient_type);
+        let needs_fixed = ['Fixed Number', 'Both'].includes(frm.doc.recipient_type);
+        let needs_group = ['Group', 'Phone and Group'].includes(frm.doc.recipient_type);
+
+        frm.toggle_reqd('phone_field', needs_phone_field && frm.doc.recipient_type !== 'Phone and Group');
+        frm.toggle_reqd('fixed_recipients', needs_fixed);
+
+        // Show/hide group fields
+        frm.toggle_display('group_id', needs_group);
+        frm.toggle_display('group_name', needs_group && frm.doc.group_id);
+        frm.toggle_display('select_group_button', needs_group);
+
+        // Clear group fields if not needed
+        if (!needs_group) {
+            frm.set_value('group_id', '');
+            frm.set_value('group_name', '');
+        }
+    },
+
+    select_group_button: function(frm) {
+        show_group_selection_dialog(frm);
     }
 });
 
@@ -250,6 +275,83 @@ function show_test_dialog(frm) {
             });
         }
     });
-    
+
     dialog.show();
+}
+
+function show_group_selection_dialog(frm) {
+    frappe.call({
+        method: 'whatsapp_notifications.whatsapp_notifications.api.fetch_whatsapp_groups',
+        freeze: true,
+        freeze_message: __('Fetching WhatsApp groups...'),
+        callback: function(r) {
+            if (r.message && r.message.success) {
+                let groups = r.message.groups;
+
+                if (!groups || groups.length === 0) {
+                    frappe.msgprint(__('No WhatsApp groups found. Make sure your WhatsApp is connected to groups.'));
+                    return;
+                }
+
+                // Build options for the select field
+                let options = groups.map(g => ({
+                    value: g.id,
+                    label: g.subject + ' (' + g.size + ' members)'
+                }));
+
+                let dialog = new frappe.ui.Dialog({
+                    title: __('Select WhatsApp Group'),
+                    fields: [
+                        {
+                            fieldname: 'group',
+                            fieldtype: 'Select',
+                            label: __('Group'),
+                            options: options.map(o => o.value),
+                            reqd: 1
+                        },
+                        {
+                            fieldname: 'group_info',
+                            fieldtype: 'HTML',
+                            options: '<div class="group-list" style="max-height: 300px; overflow-y: auto;"></div>'
+                        }
+                    ],
+                    primary_action_label: __('Select'),
+                    primary_action: function(values) {
+                        let selected = groups.find(g => g.id === values.group);
+                        if (selected) {
+                            frm.set_value('group_id', selected.id);
+                            frm.set_value('group_name', selected.subject);
+                            frm.refresh_field('group_id');
+                            frm.refresh_field('group_name');
+                            dialog.hide();
+                            frappe.show_alert({
+                                message: __('Group selected: ') + selected.subject,
+                                indicator: 'green'
+                            }, 3);
+                        }
+                    }
+                });
+
+                // Populate the select with formatted options
+                let $select = dialog.fields_dict.group.$input;
+                $select.empty();
+                options.forEach(opt => {
+                    $select.append($('<option></option>').val(opt.value).text(opt.label));
+                });
+
+                // Pre-select current group if set
+                if (frm.doc.group_id) {
+                    $select.val(frm.doc.group_id);
+                }
+
+                dialog.show();
+            } else {
+                frappe.msgprint({
+                    title: __('Error'),
+                    indicator: 'red',
+                    message: r.message.error || __('Failed to fetch WhatsApp groups')
+                });
+            }
+        }
+    });
 }

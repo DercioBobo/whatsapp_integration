@@ -19,6 +19,9 @@
         "recipient_type",
         "column_break_recipient",
         "fixed_recipients",
+        "group_id",
+        "group_name",
+        "select_group_button",
         "section_message",
         "message_template",
         "section_owner_notification",
@@ -105,7 +108,7 @@
             "fieldname": "recipient_type",
             "fieldtype": "Select",
             "label": "Recipient Type",
-            "options": "Field Value\nFixed Number\nBoth",
+            "options": "Field Value\nFixed Number\nBoth\nGroup\nPhone and Group",
             "default": "Field Value",
             "description": "How to determine recipients"
         },
@@ -119,6 +122,27 @@
             "label": "Fixed Recipients",
             "description": "Comma-separated phone numbers to always receive this notification",
             "depends_on": "eval:doc.recipient_type=='Fixed Number' || doc.recipient_type=='Both'"
+        },
+        {
+            "fieldname": "group_id",
+            "fieldtype": "Data",
+            "label": "WhatsApp Group ID",
+            "description": "The WhatsApp group ID (ending with @g.us)",
+            "depends_on": "eval:doc.recipient_type=='Group' || doc.recipient_type=='Phone and Group'",
+            "read_only": 1
+        },
+        {
+            "fieldname": "group_name",
+            "fieldtype": "Data",
+            "label": "Group Name",
+            "read_only": 1,
+            "depends_on": "eval:doc.group_id"
+        },
+        {
+            "fieldname": "select_group_button",
+            "fieldtype": "Button",
+            "label": "Select Group",
+            "depends_on": "eval:doc.recipient_type=='Group' || doc.recipient_type=='Phone and Group'"
         },
         {
             "fieldname": "section_message",

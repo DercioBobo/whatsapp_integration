@@ -167,30 +167,43 @@ class WhatsAppNotificationRule(Document):
 
     def get_recipients(self, doc):
         """
-        Get phone numbers for this notification
-        
+        Get recipients for this notification (phone numbers and/or groups)
+
         Args:
             doc: The source document
-        
+
         Returns:
-            list: List of phone numbers
+            list: List of dicts with type ('phone' or 'group') and value
         """
         recipients = []
-        
+
         # Get from document field
-        if self.recipient_type in ("Field Value", "Both") and self.phone_field:
+        if self.recipient_type in ("Field Value", "Both", "Phone and Group") and self.phone_field:
             phone = get_nested_value(doc, self.phone_field)
             if phone:
-                recipients.append(str(phone))
-        
+                recipients.append({"type": "phone", "value": str(phone)})
+
         # Get fixed recipients
         if self.recipient_type in ("Fixed Number", "Both") and self.fixed_recipients:
             for phone in self.fixed_recipients.split(","):
                 phone = phone.strip()
                 if phone:
-                    recipients.append(phone)
-        
-        return list(set(recipients))  # Remove duplicates
+                    recipients.append({"type": "phone", "value": phone})
+
+        # Get group recipient
+        if self.recipient_type in ("Group", "Phone and Group") and self.group_id:
+            recipients.append({"type": "group", "value": self.group_id})
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_recipients = []
+        for r in recipients:
+            key = (r["type"], r["value"])
+            if key not in seen:
+                seen.add(key)
+                unique_recipients.append(r)
+
+        return unique_recipients
     
     def render_message(self, doc, for_owner=False):
         """
@@ -390,23 +403,37 @@ def get_doctype_fields(doctype):
 def preview_message(rule_name, docname):
     """
     Preview a message for a specific document
-    
+
     Args:
         rule_name: The notification rule name
         docname: The document to use for preview
-    
+
     Returns:
         dict: Preview data including rendered message
     """
     rule = frappe.get_doc("WhatsApp Notification Rule", rule_name)
     doc = frappe.get_doc(rule.document_type, docname)
-    
+
     message = rule.render_message(doc)
     recipients = rule.get_recipients(doc)
-    
+
+    # Format recipients for display
+    formatted_recipients = []
+    for r in recipients:
+        if isinstance(r, dict):
+            if r["type"] == "group":
+                # Show group name if available
+                group_name = rule.group_name or r["value"]
+                formatted_recipients.append("{} (Group)".format(group_name))
+            else:
+                formatted_recipients.append(r["value"])
+        else:
+            # Legacy format (string)
+            formatted_recipients.append(r)
+
     return {
         "message": message,
-        "recipients": recipients,
+        "recipients": formatted_recipients,
         "doctype": rule.document_type,
         "docname": docname
     }

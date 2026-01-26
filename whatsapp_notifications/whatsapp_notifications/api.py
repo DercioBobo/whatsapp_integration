@@ -112,21 +112,24 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
     # Validate inputs
     if not phone or not message:
         return {"success": False, "error": _("Phone and message are required")}
-    
+
     # Get settings
     settings = get_settings()
-    
+
     if not settings.get("enabled"):
         return {"success": False, "error": _("WhatsApp notifications are disabled")}
-    
+
     if not settings.get("api_url") or not settings.get("api_key") or not settings.get("instance_name"):
         return {"success": False, "error": _("Evolution API not configured")}
-    
-    # Format phone number
-    formatted_phone = format_phone_number(phone)
-    
-    if not formatted_phone:
-        return {"success": False, "error": _("Invalid phone number")}
+
+    # Format phone number (skip for group IDs)
+    if is_group_id(phone):
+        formatted_phone = phone  # Use group ID as-is
+    else:
+        formatted_phone = format_phone_number(phone)
+
+        if not formatted_phone:
+            return {"success": False, "error": _("Invalid phone number")}
     
     # Create message log
     log = create_message_log(
@@ -169,15 +172,19 @@ def send_whatsapp_notification(phone, message, reference_doctype=None, reference
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
     
     settings = get_settings()
-    
+
     if not settings.get("enabled"):
         return {"success": False, "error": "WhatsApp notifications disabled"}
-    
-    formatted_phone = format_phone_number(phone)
-    
-    if not formatted_phone:
-        return {"success": False, "error": "Invalid phone number"}
-    
+
+    # Format phone number (skip for group IDs)
+    if is_group_id(phone):
+        formatted_phone = phone  # Use group ID as-is
+    else:
+        formatted_phone = format_phone_number(phone)
+
+        if not formatted_phone:
+            return {"success": False, "error": "Invalid phone number"}
+
     # Create log entry
     log = create_message_log(
         phone=phone,
@@ -303,9 +310,78 @@ def send_test_message(phone, message=None):
 def get_notification_stats():
     """
     Get notification statistics for dashboard
-    
+
     Returns:
         dict: Statistics
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_message_stats
     return get_message_stats()
+
+
+def is_group_id(recipient):
+    """
+    Check if the recipient is a WhatsApp group ID
+
+    Args:
+        recipient: Phone number or group ID
+
+    Returns:
+        bool: True if this is a group ID (ends with @g.us)
+    """
+    return recipient and isinstance(recipient, str) and "@g.us" in recipient
+
+
+@frappe.whitelist()
+def fetch_whatsapp_groups():
+    """
+    Fetch all WhatsApp groups from Evolution API
+
+    Returns:
+        dict: List of groups with id, subject, size or error message
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+
+    settings = get_settings()
+
+    if not settings.get("enabled"):
+        return {"success": False, "error": _("WhatsApp notifications are disabled")}
+
+    if not settings.get("api_url") or not settings.get("api_key") or not settings.get("instance_name"):
+        return {"success": False, "error": _("Evolution API not configured")}
+
+    url = "{}/group/fetchAllGroups/{}?getParticipants=false".format(
+        settings.get("api_url"),
+        settings.get("instance_name")
+    )
+
+    headers = {"apikey": settings.get("api_key")}
+
+    try:
+        response = make_http_request(url, method="GET", headers=headers)
+
+        # The response is typically a list of group objects
+        groups = []
+        if isinstance(response, list):
+            for group in response:
+                groups.append({
+                    "id": group.get("id"),
+                    "subject": group.get("subject", "Unknown Group"),
+                    "size": group.get("size", 0)
+                })
+        elif isinstance(response, dict) and response.get("groups"):
+            # Alternative response format
+            for group in response.get("groups", []):
+                groups.append({
+                    "id": group.get("id"),
+                    "subject": group.get("subject", "Unknown Group"),
+                    "size": group.get("size", 0)
+                })
+
+        return {"success": True, "groups": groups}
+
+    except Exception as e:
+        frappe.log_error(
+            message=str(e),
+            title="WhatsApp Fetch Groups Error"
+        )
+        return {"success": False, "error": str(e)}

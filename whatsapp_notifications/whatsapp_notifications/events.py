@@ -173,13 +173,26 @@ def process_rule(doc, rule, settings):
         )
     
     # Send to all recipients
-    for phone in recipients:
+    for recipient in recipients:
         try:
-            # Get recipient name if available
-            recipient_name = get_recipient_name(doc, rule.phone_field)
-            
+            # Handle both new format (dict) and legacy format (string)
+            if isinstance(recipient, dict):
+                phone_or_group = recipient["value"]
+                recipient_type = recipient["type"]
+            else:
+                # Legacy format (string)
+                phone_or_group = recipient
+                recipient_type = "phone"
+
+            # Get recipient name if available (only for phone recipients)
+            if recipient_type == "phone":
+                recipient_name = get_recipient_name(doc, rule.phone_field)
+            else:
+                # For groups, use the group name from the rule
+                recipient_name = rule.group_name or "Group"
+
             send_notification(
-                phone=phone,
+                phone=phone_or_group,
                 message=message,
                 reference_doctype=doc.doctype,
                 reference_name=doc.name,
@@ -190,7 +203,7 @@ def process_rule(doc, rule, settings):
             )
         except Exception as e:
             frappe.log_error(
-                "WhatsApp Send Error ({} to {}): {}".format(rule.name, phone, str(e)),
+                "WhatsApp Send Error ({} to {}): {}".format(rule.name, phone_or_group, str(e)),
                 "WhatsApp Send Error"
             )
     
@@ -216,13 +229,18 @@ def process_rule(doc, rule, settings):
             )
 
 
+def is_group_id(recipient):
+    """Check if the recipient is a WhatsApp group ID"""
+    return recipient and isinstance(recipient, str) and "@g.us" in recipient
+
+
 def send_notification(phone, message, reference_doctype, reference_name,
                       notification_rule, recipient_name, scheduled_time, settings):
     """
     Create message log and optionally send immediately
-    
+
     Args:
-        phone: Recipient phone
+        phone: Recipient phone or group ID
         message: Message content
         reference_doctype: Source DocType
         reference_name: Source document
@@ -234,15 +252,19 @@ def send_notification(phone, message, reference_doctype, reference_name,
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
     from whatsapp_notifications.whatsapp_notifications.api import process_message_log
-    
-    formatted_phone = format_phone_number(phone)
-    
-    if not formatted_phone:
-        frappe.log_error(
-            "Invalid phone number: {}".format(phone),
-            "WhatsApp Phone Error"
-        )
-        return
+
+    # Format phone number (skip for group IDs)
+    if is_group_id(phone):
+        formatted_phone = phone  # Use group ID as-is
+    else:
+        formatted_phone = format_phone_number(phone)
+
+        if not formatted_phone:
+            frappe.log_error(
+                "Invalid phone number: {}".format(phone),
+                "WhatsApp Phone Error"
+            )
+            return
     
     # Create log entry
     log = create_message_log(
