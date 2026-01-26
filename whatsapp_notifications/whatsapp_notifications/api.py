@@ -10,53 +10,72 @@ from frappe import _
 def make_http_request(url, method="POST", headers=None, data=None):
     """
     Make HTTP request compatible with v13, v14, and v15
-    
-    Args:
-        url: Request URL
-        method: HTTP method
-        headers: Request headers
-        data: Request body (string or dict)
-    
-    Returns:
-        dict: Response data
+    Forces JSON UTF-8 when sending dict payloads.
     """
-    # Try different methods for compatibility across versions
-    
+    headers = headers or {}
+
+    # If data is a dict/list, we want JSON
+    is_json = isinstance(data, (dict, list))
+
     # Method 1: frappe.integrations.utils (v14+)
     try:
         from frappe.integrations.utils import make_post_request, make_get_request
+
         if method.upper() == "POST":
-            return make_post_request(url, headers=headers, data=data)
+            if is_json:
+                # Some versions support `json=`
+                try:
+                    return make_post_request(url, headers=headers, json=data)
+                except TypeError:
+                    # fallback: encode manually as UTF-8 JSON string
+                    import json
+                    headers["Content-Type"] = "application/json; charset=utf-8"
+                    return make_post_request(url, headers=headers, data=json.dumps(data, ensure_ascii=False).encode("utf-8"))
+            else:
+                return make_post_request(url, headers=headers, data=data)
         else:
             return make_get_request(url, headers=headers)
+
     except ImportError:
         pass
     except Exception as e:
         frappe.log_error("integrations.utils failed: " + str(e), "WhatsApp HTTP Debug")
-    
+
     # Method 2: frappe.make_post_request (v13)
     try:
         if method.upper() == "POST":
-            return frappe.make_post_request(url, headers=headers, data=data)
+            if is_json:
+                import json
+                headers["Content-Type"] = "application/json; charset=utf-8"
+                return frappe.make_post_request(
+                    url,
+                    headers=headers,
+                    data=json.dumps(data, ensure_ascii=False).encode("utf-8")
+                )
+            else:
+                return frappe.make_post_request(url, headers=headers, data=data)
         else:
             return frappe.make_get_request(url, headers=headers)
+
     except AttributeError:
         pass
     except Exception as e:
         frappe.log_error("frappe.make_post_request failed: " + str(e), "WhatsApp HTTP Debug")
-    
+
     # Method 3: requests library (fallback)
-    try:
-        import requests
-        if method.upper() == "POST":
-            response = requests.post(url, headers=headers, data=data, timeout=30)
+    import requests
+    if method.upper() == "POST":
+        if is_json:
+            headers["Content-Type"] = "application/json; charset=utf-8"
+            response = requests.post(url, headers=headers, json=data, timeout=30)
         else:
-            response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        frappe.log_error("requests library failed: " + str(e), "WhatsApp HTTP Debug")
-        raise
+            response = requests.post(url, headers=headers, data=data, timeout=30)
+    else:
+        response = requests.get(url, headers=headers, timeout=30)
+
+    response.raise_for_status()
+    return response.json()
+
 
 
 @frappe.whitelist(allow_guest=False)
@@ -218,14 +237,11 @@ def process_message_log(log_name):
         }
         
         # Build payload - escape for JSON (v13 sandbox compatible)
-        safe_message = (
-            log.message
-            .replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        )
+        payload = {
+            "number": log.formatted_phone,
+            "text": log.message
+        }
+
         json_data = '{{"number": "{}", "text": "{}"}}'.format(log.formatted_phone, safe_message)
         
         # Make request using compatible method
@@ -250,18 +266,18 @@ def process_message_log(log_name):
         except Exception as e:
             error_msg = str(e)
             log.mark_failed(error_msg)
-            
+
             frappe.log_error(
-                "WhatsApp Send Failed ({}): {}".format(log.name, error_msg),
-                "WhatsApp Error"
+                message=f"{log.name} -> {error_msg}",
+                title="WhatsApp Send Failed"
             )
-            
+
             return {"success": False, "error": error_msg, "log": log.name}
     
     except Exception as e:
         frappe.log_error(
-            "WhatsApp Process Error: {}".format(str(e)),
-            "WhatsApp Error"
+            message=str(e),
+            title="WhatsApp Process Error"
         )
         return {"success": False, "error": str(e)}
 
