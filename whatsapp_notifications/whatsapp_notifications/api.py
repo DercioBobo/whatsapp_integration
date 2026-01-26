@@ -242,7 +242,6 @@ def process_message_log(log_name):
             "text": log.message
         }
 
-        json_data = '{{"number": "{}", "text": "{}"}}'.format(log.formatted_phone, safe_message)
         
         # Make request using compatible method
         try:
