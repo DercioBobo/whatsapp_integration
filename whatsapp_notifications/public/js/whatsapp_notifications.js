@@ -14,7 +14,7 @@ frappe.whatsapp = frappe.whatsapp || {};
  */
 frappe.whatsapp.send = function(phone, message, options = {}) {
     return frappe.call({
-        method: 'whatsapp_notifications.api.send_whatsapp',
+        method: 'whatsapp_notifications.whatsapp_notifications.api.send_whatsapp',
         args: {
             phone: phone,
             message: message,

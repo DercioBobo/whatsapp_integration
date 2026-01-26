@@ -34,7 +34,7 @@ class WhatsAppMessageLog(Document):
         self.save(ignore_permissions=True)
         
         # Trigger immediate send
-        from whatsapp_notifications.api import process_message_log
+        from whatsapp_notifications.whatsapp_notifications.api import process_message_log
         process_message_log(self.name)
         
         return {"success": True, "message": _("Message queued for retry")}

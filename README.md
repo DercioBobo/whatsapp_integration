@@ -138,7 +138,7 @@ import frappe
 
 # Via whitelisted method
 frappe.call(
-    "whatsapp_notifications.api.send_whatsapp",
+    "whatsapp_notifications.whatsapp_notifications.api.send_whatsapp",
     phone="841234567",
     message="Hello from ERPNext!",
     doctype="Sales Order",  # Optional: for logging
@@ -150,7 +150,7 @@ frappe.call(
 
 ```python
 # In any Python script
-from whatsapp_notifications.api import send_whatsapp_notification
+from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_notification
 
 send_whatsapp_notification(
     phone="841234567",
@@ -164,7 +164,7 @@ send_whatsapp_notification(
 
 ```javascript
 frappe.call({
-    method: 'whatsapp_notifications.api.send_whatsapp',
+    method: 'whatsapp_notifications.whatsapp_notifications.api.send_whatsapp',
     args: {
         phone: '841234567',
         message: 'Hello from ERPNext!'

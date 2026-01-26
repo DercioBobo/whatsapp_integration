@@ -220,7 +220,7 @@ function show_test_dialog(frm) {
                     if (r.message && r.message.message) {
                         // Now send the test
                         frappe.call({
-                            method: 'whatsapp_notifications.api.send_whatsapp',
+                            method: 'whatsapp_notifications.whatsapp_notifications.api.send_whatsapp',
                             args: {
                                 phone: values.test_phone,
                                 message: r.message.message,
