@@ -148,38 +148,23 @@ class WhatsAppNotificationRule(Document):
     
     def is_within_active_hours(self):
         """Check if current time is within active hours"""
-        from frappe.utils import get_time
-        
-        # Check active days
-        if self.active_hours_start and self.active_hours_end:
-            now = frappe.utils.now_datetime().time()
-            start = get_time(self.active_hours_start)
-            end = get_time(self.active_hours_end)
+        from frappe.utils import get_time, now_datetime
 
-            if start <= end:
-                if not (start <= now <= end):
-                    return False
-            else:
-                if not (now >= start or now <= end):
-                    return False
-        
-        # Check active hours
-        if self.active_hours_start and self.active_hours_end:
-            now = datetime.now().time()
-            start = datetime.strptime(str(self.active_hours_start), "%H:%M:%S").time()
-            end = datetime.strptime(str(self.active_hours_end), "%H:%M:%S").time()
-            
-            if start <= end:
-                # Normal range (e.g., 09:00 to 18:00)
-                if not (start <= now <= end):
-                    return False
-            else:
-                # Overnight range (e.g., 22:00 to 06:00)
-                if not (now >= start or now <= end):
-                    return False
-        
-        return True
-    
+        # If hours aren't set, no restriction
+        if not (self.active_hours_start and self.active_hours_end):
+            return True
+
+        now = now_datetime().time()
+        start = get_time(self.active_hours_start)  # supports microseconds
+        end = get_time(self.active_hours_end)      # supports microseconds
+
+        if start <= end:
+            # Normal range (e.g., 09:00 to 18:00)
+            return start <= now <= end
+        else:
+            # Overnight range (e.g., 22:00 to 06:00)
+            return now >= start or now <= end
+
     def get_recipients(self, doc):
         """
         Get phone numbers for this notification
