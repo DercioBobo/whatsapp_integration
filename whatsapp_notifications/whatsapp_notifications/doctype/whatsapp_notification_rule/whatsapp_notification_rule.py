@@ -148,14 +148,20 @@ class WhatsAppNotificationRule(Document):
     
     def is_within_active_hours(self):
         """Check if current time is within active hours"""
-        from datetime import datetime
+        from frappe.utils import get_time
         
         # Check active days
-        if self.active_days:
-            days = [d.strip().lower()[:3] for d in self.active_days.split(",")]
-            today = datetime.now().strftime("%a").lower()[:3]
-            if today not in days:
-                return False
+        if self.active_hours_start and self.active_hours_end:
+            now = frappe.utils.now_datetime().time()
+            start = get_time(self.active_hours_start)
+            end = get_time(self.active_hours_end)
+
+            if start <= end:
+                if not (start <= now <= end):
+                    return False
+            else:
+                if not (now >= start or now <= end):
+                    return False
         
         # Check active hours
         if self.active_hours_start and self.active_hours_end:
