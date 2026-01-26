@@ -245,7 +245,7 @@ def process_message_log(log_name):
         
         # Make request using compatible method
         try:
-            response = make_http_request(url, method="POST", headers=headers, data=json_data)
+            response = make_http_request(url, method="POST", headers=headers, data=payload)
             
             # Extract message ID from response
             response_id = None
