@@ -285,23 +285,27 @@ frappe.whatsapp.compose_media = function(options = {}) {
         let print_formats = print_formats_result.success ? print_formats_result.print_formats : [{name: 'Standard'}];
         let attachments = attachments_result.success ? attachments_result.attachments : [];
 
-        // Build send type options
-        let send_options = [
-            { label: __('Document PDF'), value: 'pdf' }
-        ];
+        // Build send type options with clearer labels
+        let send_type_options = [];
 
+        // Always add Document PDF option
+        send_type_options.push('Document PDF');
+
+        // Add attachment option if there are attachments
         if (attachments.length > 0) {
-            send_options.push({ label: __('Attachment'), value: 'attachment' });
+            send_type_options.push('Attached File');
         }
 
-        // Build attachments select options
-        let attachment_options = attachments.map(a => ({
-            label: a.file_name + ' (' + frappe.whatsapp.format_file_size(a.file_size) + ')',
-            value: a.file_url
-        }));
+        // Build attachments select options with labels
+        let attachment_labels = attachments.map(a =>
+            a.file_name + ' (' + frappe.whatsapp.format_file_size(a.file_size) + ')'
+        );
 
         // Build print format options
         let pf_options = print_formats.map(p => p.name);
+
+        // Default to first available option
+        let default_send_type = send_type_options[0] || 'Document PDF';
 
         let dialog = new frappe.ui.Dialog({
             title: __('Send via WhatsApp'),
@@ -319,12 +323,12 @@ frappe.whatsapp.compose_media = function(options = {}) {
                     fieldtype: 'Select',
                     label: __('What to Send'),
                     reqd: 1,
-                    options: send_options.map(o => o.value).join('\n'),
-                    default: 'pdf',
+                    options: send_type_options.join('\n'),
+                    default: default_send_type,
                     onchange: function() {
                         let val = dialog.get_value('send_type');
-                        dialog.set_df_property('print_format', 'hidden', val !== 'pdf');
-                        dialog.set_df_property('attachment', 'hidden', val !== 'attachment');
+                        dialog.set_df_property('print_format', 'hidden', val !== 'Document PDF');
+                        dialog.set_df_property('attachment', 'hidden', val !== 'Attached File');
                     }
                 },
                 {
@@ -333,21 +337,22 @@ frappe.whatsapp.compose_media = function(options = {}) {
                     label: __('Print Format'),
                     options: pf_options.join('\n'),
                     default: print_format,
-                    depends_on: "eval:doc.send_type=='pdf'"
+                    depends_on: "eval:doc.send_type=='Document PDF'"
                 },
                 {
                     fieldname: 'attachment',
                     fieldtype: 'Select',
-                    label: __('Select Attachment'),
-                    options: attachment_options.map(a => a.value).join('\n'),
+                    label: __('Select File'),
+                    options: attachments.map(a => a.file_url).join('\n'),
                     default: attachments.length > 0 ? attachments[0].file_url : '',
                     hidden: 1,
-                    depends_on: "eval:doc.send_type=='attachment'"
+                    depends_on: "eval:doc.send_type=='Attached File'",
+                    description: attachments.length > 0 ? attachment_labels.join(', ') : ''
                 },
                 {
                     fieldname: 'caption',
                     fieldtype: 'Small Text',
-                    label: __('Caption'),
+                    label: __('Caption (optional)'),
                     default: caption || __('Document: {0}', [docname])
                 }
             ],
@@ -355,7 +360,7 @@ frappe.whatsapp.compose_media = function(options = {}) {
             primary_action: function(values) {
                 dialog.get_primary_btn().prop('disabled', true).html(__('Sending...'));
 
-                let send_options = {
+                let media_options = {
                     phone: values.phone,
                     doctype: doctype,
                     docname: docname,
@@ -375,13 +380,13 @@ frappe.whatsapp.compose_media = function(options = {}) {
                     }
                 };
 
-                if (values.send_type === 'pdf') {
-                    send_options.print_format = values.print_format;
-                } else if (values.send_type === 'attachment') {
-                    send_options.file_url = values.attachment;
+                if (values.send_type === 'Document PDF') {
+                    media_options.print_format = values.print_format;
+                } else if (values.send_type === 'Attached File') {
+                    media_options.file_url = values.attachment;
                 }
 
-                frappe.whatsapp.send_media(send_options);
+                frappe.whatsapp.send_media(media_options);
             }
         });
 
@@ -390,8 +395,8 @@ frappe.whatsapp.compose_media = function(options = {}) {
         // Update visibility based on initial selection
         setTimeout(function() {
             let val = dialog.get_value('send_type');
-            dialog.set_df_property('print_format', 'hidden', val !== 'pdf');
-            dialog.set_df_property('attachment', 'hidden', val !== 'attachment');
+            dialog.set_df_property('print_format', 'hidden', val !== 'Document PDF');
+            dialog.set_df_property('attachment', 'hidden', val !== 'Attached File');
         }, 100);
     });
 };

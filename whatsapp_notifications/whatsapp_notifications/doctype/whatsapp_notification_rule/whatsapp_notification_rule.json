@@ -156,23 +156,16 @@
             "fieldname": "message_type",
             "fieldtype": "Select",
             "label": "Message Type",
-            "options": "Text Only\nDocument PDF\nText + Document PDF",
+            "options": "Text Only\nAttached File\nDocument PDF\nText + Attached File\nText + Document PDF",
             "default": "Text Only",
-            "description": "Type of message to send"
+            "description": "What to send: Text Only, Attached File (first attachment), Document PDF (generated from print format), or combinations"
         },
         {
             "fieldname": "print_format",
             "fieldtype": "Data",
             "label": "Print Format",
             "description": "Print format to use for PDF generation. Leave empty for 'Standard'",
-            "depends_on": "eval:doc.message_type != 'Text Only'"
-        },
-        {
-            "fieldname": "attach_document",
-            "fieldtype": "Check",
-            "label": "Attach Existing File",
-            "description": "If checked, will send the first attached file instead of generating PDF",
-            "depends_on": "eval:doc.message_type != 'Text Only'"
+            "depends_on": "eval:doc.message_type=='Document PDF' || doc.message_type=='Text + Document PDF'"
         },
         {
             "fieldname": "message_template",

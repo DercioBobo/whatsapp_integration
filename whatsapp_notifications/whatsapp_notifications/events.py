@@ -298,9 +298,13 @@ def send_notification(phone, message, reference_doctype, reference_name,
             return
 
     # Determine if this is a media message
-    is_media = message_type in ("Document PDF", "Text + Document PDF")
+    is_media = message_type in ("Document PDF", "Text + Document PDF", "Attached File", "Text + Attached File")
 
     if is_media:
+        # Determine media source
+        use_attachment = message_type in ("Attached File", "Text + Attached File")
+        use_pdf = message_type in ("Document PDF", "Text + Document PDF")
+
         # Handle media message
         send_media_notification(
             phone=phone,
@@ -313,7 +317,8 @@ def send_notification(phone, message, reference_doctype, reference_name,
             scheduled_time=scheduled_time,
             settings=settings,
             print_format=print_format,
-            attach_document=attach_document
+            use_attachment=use_attachment,
+            use_pdf=use_pdf
         )
     else:
         # Handle text-only message
@@ -346,7 +351,7 @@ def send_notification(phone, message, reference_doctype, reference_name,
 
 def send_media_notification(phone, formatted_phone, message, reference_doctype, reference_name,
                             notification_rule, recipient_name, scheduled_time, settings,
-                            print_format=None, attach_document=False):
+                            print_format=None, use_attachment=False, use_pdf=False):
     """
     Send a media notification (document PDF or attachment)
 
@@ -361,7 +366,8 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
         scheduled_time: When to send (None = immediate)
         settings: API settings dict
         print_format: Print format for PDF generation
-        attach_document: Whether to use attached file instead of generating PDF
+        use_attachment: Whether to send attached file
+        use_pdf: Whether to generate and send PDF
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.whatsapp_notifications.api import (
@@ -370,14 +376,13 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
 
     try:
         # Determine what to send
-        file_url = None
         media_base64 = None
         mimetype = None
         filename = None
         file_size = 0
         media_type = "document"
 
-        if attach_document:
+        if use_attachment:
             # Try to get first attached file
             attachments = frappe.get_all(
                 "File",
@@ -408,10 +413,21 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
                     else:
                         media_type = "document"
                 else:
-                    # Fall back to PDF generation
-                    attach_document = False
+                    frappe.log_error(
+                        "Could not read attachment for {} {}: {}".format(
+                            reference_doctype, reference_name, file_data.get("error")
+                        ),
+                        "WhatsApp Attachment Error"
+                    )
+                    return
+            else:
+                frappe.log_error(
+                    "No attachments found for {} {}".format(reference_doctype, reference_name),
+                    "WhatsApp Attachment Error"
+                )
+                return
 
-        if not attach_document or not media_base64:
+        elif use_pdf:
             # Generate PDF from document
             pdf_data = get_document_pdf(reference_doctype, reference_name, print_format)
             if pdf_data.get("success"):
@@ -421,13 +437,30 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
                 file_size = pdf_data.get("size", 0)
                 media_type = "document"
             else:
-                frappe.log_error(
-                    "Could not generate PDF for {} {}: {}".format(
-                        reference_doctype, reference_name, pdf_data.get("error")
-                    ),
-                    "WhatsApp PDF Error"
-                )
+                error_msg = pdf_data.get("error", "Unknown error")
+                # Check if it's a wkhtmltopdf error
+                if "wkhtmltopdf" in error_msg.lower():
+                    frappe.log_error(
+                        "PDF generation failed - wkhtmltopdf not installed. "
+                        "Please install wkhtmltopdf on the server or use 'Attached File' option instead. "
+                        "Document: {} {}".format(reference_doctype, reference_name),
+                        "WhatsApp PDF Error - wkhtmltopdf Missing"
+                    )
+                else:
+                    frappe.log_error(
+                        "Could not generate PDF for {} {}: {}".format(
+                            reference_doctype, reference_name, error_msg
+                        ),
+                        "WhatsApp PDF Error"
+                    )
                 return
+        else:
+            # No media source specified
+            frappe.log_error(
+                "No media source specified for {} {}".format(reference_doctype, reference_name),
+                "WhatsApp Media Error"
+            )
+            return
 
         # Create message log with media details
         log = create_message_log(
