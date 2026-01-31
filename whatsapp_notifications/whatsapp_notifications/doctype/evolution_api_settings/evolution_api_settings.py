@@ -110,10 +110,22 @@ def get_settings():
     Returns dict with all settings for easy access
     """
     settings = frappe.cache().get_value("evolution_api_settings")
-    
+
     if not settings:
         try:
             doc = frappe.get_single("Evolution API Settings")
+
+            # Get media doctypes child table
+            media_doctypes = []
+            if hasattr(doc, 'media_doctypes') and doc.media_doctypes:
+                for row in doc.media_doctypes:
+                    media_doctypes.append({
+                        "document_type": row.document_type,
+                        "phone_field": row.phone_field,
+                        "default_print_format": row.default_print_format,
+                        "caption_template": row.caption_template
+                    })
+
             settings = {
                 "enabled": doc.enabled,
                 "api_url": doc.api_url,
@@ -131,6 +143,7 @@ def get_settings():
                 "enable_rate_limiting": doc.enable_rate_limiting,
                 "messages_per_minute": doc.messages_per_minute or 20,
                 "queue_enabled": doc.queue_enabled,
+                "media_doctypes": media_doctypes,
             }
             frappe.cache().set_value("evolution_api_settings", settings, expires_in_sec=300)
         except Exception:
@@ -152,8 +165,9 @@ def get_settings():
                 "enable_rate_limiting": False,
                 "messages_per_minute": 20,
                 "queue_enabled": True,
+                "media_doctypes": [],
             }
-    
+
     return settings
 
 
