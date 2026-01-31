@@ -67,11 +67,21 @@ class WhatsAppNotificationRule(Document):
                 frappe.throw(_("Invalid condition: {}").format(str(e)))
     
     def validate_time_settings(self):
-        """Validate active hours"""
+        """Validate active hours and clean up default values"""
+        # Clean up "00:00:00" values that Frappe may set by default
+        if self.active_hours_start in ("00:00:00", "00:00"):
+            self.active_hours_start = None
+        if self.active_hours_end in ("00:00:00", "00:00"):
+            self.active_hours_end = None
+
+        # If both are the same non-null value, clear them (likely unintentional)
         if self.active_hours_start and self.active_hours_end:
-            # Both must be set or neither
-            pass
-        elif self.active_hours_start or self.active_hours_end:
+            if self.active_hours_start == self.active_hours_end:
+                self.active_hours_start = None
+                self.active_hours_end = None
+
+        # Validation: both must be set or neither
+        if bool(self.active_hours_start) != bool(self.active_hours_end):
             frappe.throw(_("Both Active Hours Start and End must be set, or leave both empty"))
     
     def on_update(self):
@@ -149,14 +159,33 @@ class WhatsAppNotificationRule(Document):
     def is_within_active_hours(self):
         """Check if current time is within active hours"""
         from frappe.utils import get_time, now_datetime
+        import datetime
 
-        # If hours aren't set, no restriction
-        if not (self.active_hours_start and self.active_hours_end):
+        # Helper to check if time value is effectively empty
+        def is_empty_time(value):
+            if not value:
+                return True
+            # Check for "00:00:00" or midnight which Frappe may set as default
+            if isinstance(value, str):
+                value = value.strip()
+                if value in ("", "00:00:00", "00:00"):
+                    return True
+            if isinstance(value, datetime.time):
+                if value == datetime.time(0, 0, 0):
+                    return True
+            return False
+
+        # If hours aren't properly set, no restriction (allow all times)
+        if is_empty_time(self.active_hours_start) or is_empty_time(self.active_hours_end):
+            return True
+
+        # Both start and end are the same (likely both set to same value by mistake)
+        if self.active_hours_start == self.active_hours_end:
             return True
 
         now = now_datetime().time()
-        start = get_time(self.active_hours_start)  # supports microseconds
-        end = get_time(self.active_hours_end)      # supports microseconds
+        start = get_time(self.active_hours_start)
+        end = get_time(self.active_hours_end)
 
         if start <= end:
             # Normal range (e.g., 09:00 to 18:00)

@@ -210,7 +210,7 @@
             "collapsible": 1
         },
         {
-            "default": "1",
+            "default": "1 - High",
             "fieldname": "priority",
             "fieldtype": "Select",
             "label": "Priority",

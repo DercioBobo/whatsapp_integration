@@ -78,7 +78,7 @@ def handle_on_trash(doc, method=None):
 def process_event(doc, event):
     """
     Process a document event and trigger any matching notification rules
-    
+
     Args:
         doc: The document triggering the event
         event: Event type (after_insert, on_update, etc.)
@@ -86,29 +86,48 @@ def process_event(doc, event):
     # Skip system doctypes early (performance optimization)
     if doc.doctype in SYSTEM_DOCTYPES:
         return
-    
+
     # Skip if doctype starts with __ (internal)
     if doc.doctype.startswith("__"):
         return
-    
+
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_rules_for_doctype
-    
+
     try:
         # Quick check if enabled
         settings = get_settings()
         if not settings.get("enabled"):
             return
-        
+
         # Get applicable rules
         rules = get_rules_for_doctype(doc.doctype, event)
-        
+
+        # Debug logging
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Event: {} | DocType: {} | Doc: {} | Rules found: {}".format(
+                    event, doc.doctype, doc.name, len(rules)
+                ),
+                "WhatsApp Event Debug"
+            )
+
         if not rules:
             return
-        
+
         # Process each rule
         for rule in rules:
             try:
+                # Debug: check if rule is applicable
+                if settings.get("enable_debug_logging"):
+                    is_applicable = rule.is_applicable(doc, event)
+                    frappe.log_error(
+                        "Rule: {} | Applicable: {} | Doc: {}".format(
+                            rule.name, is_applicable, doc.name
+                        ),
+                        "WhatsApp Rule Debug"
+                    )
+
                 process_rule(doc, rule, settings)
             except Exception as e:
                 frappe.log_error(
@@ -117,7 +136,7 @@ def process_event(doc, event):
                     ),
                     "WhatsApp Rule Error"
                 )
-    
+
     except Exception as e:
         # Don't let notification errors break document operations
         frappe.log_error(
