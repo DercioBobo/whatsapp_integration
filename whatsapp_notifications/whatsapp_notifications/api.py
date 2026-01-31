@@ -69,14 +69,24 @@ def make_http_request(url, method="POST", headers=None, data=None):
     if method.upper() == "POST":
         if is_json:
             headers["Content-Type"] = "application/json; charset=utf-8"
-            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response = requests.post(url, headers=headers, json=data, timeout=60)
         else:
-            response = requests.post(url, headers=headers, data=data, timeout=30)
+            response = requests.post(url, headers=headers, data=data, timeout=60)
     else:
         response = requests.get(url, headers=headers, timeout=30)
 
-    response.raise_for_status()
-    return response.json()
+    # Try to get response body for better error messages
+    try:
+        response_json = response.json()
+    except Exception:
+        response_json = None
+
+    if not response.ok:
+        # Capture the error response from the API
+        error_detail = response_json if response_json else response.text[:500]
+        raise Exception("API Error {}: {}".format(response.status_code, error_detail))
+
+    return response_json
 
 
 
@@ -562,15 +572,25 @@ def process_media_message_log(log_name):
             "apikey": settings.get("api_key")
         }
 
-        # Build payload for Evolution API
+        # Build payload for Evolution API v2.3
+        # Evolution API expects raw base64 string, not data URI format
         payload = {
             "number": log.formatted_phone,
-            "mediatype": log.media_type or "document",
+            "mediatype": log.media_type or "document",  # image, video, audio, document
             "mimetype": mimetype,
             "caption": log.caption or "",
-            "media": "data:{};base64,{}".format(mimetype, media_base64),
+            "media": media_base64,  # Raw base64 string without data URI prefix
             "fileName": log.file_name or "document.pdf"
         }
+
+        # Debug logging for payload (without the actual base64 data)
+        if settings.get("enable_debug_logging"):
+            debug_payload = payload.copy()
+            debug_payload["media"] = "[BASE64_DATA - {} bytes]".format(len(media_base64))
+            frappe.log_error(
+                "Sending media to Evolution API:\nURL: {}\nPayload: {}".format(url, debug_payload),
+                "WhatsApp Media Debug"
+            )
 
         # Make request
         try:
@@ -598,10 +618,23 @@ def process_media_message_log(log_name):
 
         except Exception as e:
             error_msg = str(e)
+
+            # Try to extract more details from the error
+            error_details = {
+                "error": error_msg,
+                "url": url,
+                "number": log.formatted_phone,
+                "mediatype": log.media_type,
+                "mimetype": mimetype,
+                "fileName": log.file_name,
+                "caption_length": len(log.caption or ""),
+                "media_base64_length": len(media_base64) if media_base64 else 0
+            }
+
             log.mark_failed(error_msg)
 
             frappe.log_error(
-                message=f"{log.name} -> {error_msg}",
+                message="{} -> {}\n\nDetails: {}".format(log.name, error_msg, error_details),
                 title="WhatsApp Media Send Failed"
             )
 
