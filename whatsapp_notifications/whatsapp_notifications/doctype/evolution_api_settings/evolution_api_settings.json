@@ -30,7 +30,9 @@
         "enable_rate_limiting",
         "messages_per_minute",
         "column_break_rate",
-        "queue_enabled"
+        "queue_enabled",
+        "section_media",
+        "media_doctypes"
     ],
     "fields": [
         {
@@ -195,6 +197,19 @@
             "fieldtype": "Check",
             "label": "Enable Message Queue",
             "description": "Queue messages for background processing (recommended for high volume)"
+        },
+        {
+            "fieldname": "section_media",
+            "fieldtype": "Section Break",
+            "label": "WhatsApp Media Button",
+            "description": "Configure which DocTypes show the 'Send via WhatsApp' button"
+        },
+        {
+            "fieldname": "media_doctypes",
+            "fieldtype": "Table",
+            "label": "Enabled DocTypes",
+            "options": "WhatsApp Media DocType",
+            "description": "Add DocTypes that should have the WhatsApp media button"
         }
     ],
     "index_web_pages_for_search": 0,

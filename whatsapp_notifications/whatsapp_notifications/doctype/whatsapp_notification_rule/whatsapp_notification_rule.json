@@ -23,6 +23,9 @@
         "group_name",
         "select_group_button",
         "section_message",
+        "message_type",
+        "print_format",
+        "attach_document",
         "message_template",
         "section_owner_notification",
         "notify_owner",
@@ -147,7 +150,29 @@
         {
             "fieldname": "section_message",
             "fieldtype": "Section Break",
-            "label": "Message Template"
+            "label": "Message Configuration"
+        },
+        {
+            "fieldname": "message_type",
+            "fieldtype": "Select",
+            "label": "Message Type",
+            "options": "Text Only\nDocument PDF\nText + Document PDF",
+            "default": "Text Only",
+            "description": "Type of message to send"
+        },
+        {
+            "fieldname": "print_format",
+            "fieldtype": "Data",
+            "label": "Print Format",
+            "description": "Print format to use for PDF generation. Leave empty for 'Standard'",
+            "depends_on": "eval:doc.message_type != 'Text Only'"
+        },
+        {
+            "fieldname": "attach_document",
+            "fieldtype": "Check",
+            "label": "Attach Existing File",
+            "description": "If checked, will send the first attached file instead of generating PDF",
+            "depends_on": "eval:doc.message_type != 'Text Only'"
         },
         {
             "fieldname": "message_template",

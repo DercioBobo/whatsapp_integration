@@ -1,0 +1,57 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "document_type",
+        "phone_field",
+        "default_print_format",
+        "caption_template"
+    ],
+    "fields": [
+        {
+            "fieldname": "document_type",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Document Type",
+            "options": "DocType",
+            "reqd": 1,
+            "description": "DocType to enable WhatsApp media button"
+        },
+        {
+            "fieldname": "phone_field",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Phone Field",
+            "description": "Field name containing recipient phone (e.g., contact_mobile, mobile_no, phone). Supports dot notation for linked docs (e.g., customer.mobile_no)"
+        },
+        {
+            "fieldname": "default_print_format",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Default Print Format",
+            "description": "Default print format for PDF generation. Leave empty for 'Standard'"
+        },
+        {
+            "fieldname": "caption_template",
+            "fieldtype": "Small Text",
+            "label": "Default Caption Template",
+            "description": "Default Jinja2 caption template. Use {{ doc.name }}, {{ doc.customer }}, etc."
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "istable": 1,
+    "links": [],
+    "modified": "2024-01-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "WhatsApp Notifications",
+    "name": "WhatsApp Media DocType",
+    "owner": "Administrator",
+    "permissions": [],
+    "quick_entry": 0,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 0
+}

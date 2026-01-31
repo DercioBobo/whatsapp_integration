@@ -7,6 +7,7 @@
     "engine": "InnoDB",
     "field_order": [
         "status",
+        "message_type",
         "section_recipient",
         "phone",
         "formatted_phone",
@@ -14,6 +15,12 @@
         "recipient_name",
         "section_message",
         "message",
+        "section_media",
+        "media_type",
+        "file_name",
+        "column_break_media",
+        "file_size",
+        "caption",
         "section_reference",
         "reference_doctype",
         "reference_name",
@@ -29,7 +36,9 @@
         "scheduled_time",
         "column_break_tracking",
         "sent_at",
-        "delivered_at"
+        "delivered_at",
+        "_media_base64",
+        "_media_mimetype"
     ],
     "fields": [
         {
@@ -41,6 +50,15 @@
             "options": "Pending\nQueued\nSending\nSent\nDelivered\nRead\nFailed\nCancelled",
             "default": "Pending",
             "reqd": 1
+        },
+        {
+            "fieldname": "message_type",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Type",
+            "options": "Text\nMedia\nDocument",
+            "default": "Text"
         },
         {
             "fieldname": "section_recipient",
@@ -81,6 +99,42 @@
             "fieldtype": "Long Text",
             "in_list_view": 1,
             "label": "Message",
+            "read_only": 1
+        },
+        {
+            "fieldname": "section_media",
+            "fieldtype": "Section Break",
+            "label": "Media Details",
+            "depends_on": "eval:doc.message_type != 'Text'",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "media_type",
+            "fieldtype": "Select",
+            "label": "Media Type",
+            "options": "\nimage\nvideo\naudio\ndocument",
+            "read_only": 1
+        },
+        {
+            "fieldname": "file_name",
+            "fieldtype": "Data",
+            "label": "File Name",
+            "read_only": 1
+        },
+        {
+            "fieldname": "column_break_media",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "file_size",
+            "fieldtype": "Int",
+            "label": "File Size (bytes)",
+            "read_only": 1
+        },
+        {
+            "fieldname": "caption",
+            "fieldtype": "Small Text",
+            "label": "Caption",
             "read_only": 1
         },
         {
@@ -178,6 +232,21 @@
             "fieldname": "delivered_at",
             "fieldtype": "Datetime",
             "label": "Delivered At",
+            "read_only": 1
+        },
+        {
+            "fieldname": "_media_base64",
+            "fieldtype": "Long Text",
+            "label": "Media Base64",
+            "hidden": 1,
+            "read_only": 1,
+            "description": "Temporary storage for media data (cleared after sending)"
+        },
+        {
+            "fieldname": "_media_mimetype",
+            "fieldtype": "Data",
+            "label": "Media Mimetype",
+            "hidden": 1,
             "read_only": 1
         }
     ],

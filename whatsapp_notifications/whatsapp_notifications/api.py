@@ -5,6 +5,8 @@ Compatible with ERPNext v13, v14, and v15
 """
 import frappe
 from frappe import _
+import base64
+import os
 
 
 def make_http_request(url, method="POST", headers=None, data=None):
@@ -385,3 +387,515 @@ def fetch_whatsapp_groups():
             title="WhatsApp Fetch Groups Error"
         )
         return {"success": False, "error": str(e)}
+
+
+# ============================================================
+# Media Sending Functions
+# ============================================================
+
+@frappe.whitelist()
+def send_whatsapp_media(phone, doctype=None, docname=None, file_url=None,
+                        print_format=None, caption=None, queue=True):
+    """
+    Send a WhatsApp message with media (document PDF or attachment)
+
+    Args:
+        phone: Recipient phone number
+        doctype: Reference DocType (required if sending document PDF)
+        docname: Reference document name (required if sending document PDF)
+        file_url: URL of attached file to send (optional, if not using PDF)
+        print_format: Print format for PDF generation (optional)
+        caption: Message caption (optional)
+        queue: If True, queue for background processing (default)
+
+    Returns:
+        dict: Result with success status
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
+    from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
+
+    # Validate inputs
+    if not phone:
+        return {"success": False, "error": _("Phone number is required")}
+
+    if not file_url and (not doctype or not docname):
+        return {"success": False, "error": _("Either file_url or doctype/docname is required")}
+
+    # Get settings
+    settings = get_settings()
+
+    if not settings.get("enabled"):
+        return {"success": False, "error": _("WhatsApp notifications are disabled")}
+
+    if not settings.get("api_url") or not settings.get("api_key") or not settings.get("instance_name"):
+        return {"success": False, "error": _("Evolution API not configured")}
+
+    # Format phone number (skip for group IDs)
+    if is_group_id(phone):
+        formatted_phone = phone
+    else:
+        formatted_phone = format_phone_number(phone)
+        if not formatted_phone:
+            return {"success": False, "error": _("Invalid phone number")}
+
+    # Determine media type and get file data
+    try:
+        if file_url:
+            # Sending an attached file
+            file_data = get_file_as_base64(file_url)
+            if not file_data.get("success"):
+                return file_data
+
+            media_base64 = file_data["base64"]
+            mimetype = file_data["mimetype"]
+            filename = file_data["filename"]
+            file_size = file_data.get("size", 0)
+            media_type = get_media_type_from_mimetype(mimetype)
+            message_type = "Media"
+        else:
+            # Generate PDF from document
+            pdf_data = get_document_pdf(doctype, docname, print_format)
+            if not pdf_data.get("success"):
+                return pdf_data
+
+            media_base64 = pdf_data["base64"]
+            mimetype = "application/pdf"
+            filename = pdf_data["filename"]
+            file_size = pdf_data.get("size", 0)
+            media_type = "document"
+            message_type = "Document"
+
+    except Exception as e:
+        frappe.log_error(
+            message=str(e),
+            title="WhatsApp Media Preparation Error"
+        )
+        return {"success": False, "error": str(e)}
+
+    # Build caption if not provided
+    if not caption and doctype and docname:
+        caption = _("Document: {0}").format(docname)
+
+    # Create message log
+    log = create_message_log(
+        phone=phone,
+        message=caption or "",
+        reference_doctype=doctype,
+        reference_name=docname,
+        formatted_phone=formatted_phone,
+        message_type=message_type,
+        media_type=media_type,
+        file_name=filename,
+        file_size=file_size,
+        caption=caption
+    )
+
+    # Store media data temporarily for processing
+    log.db_set("_media_base64", media_base64, update_modified=False)
+    log.db_set("_media_mimetype", mimetype, update_modified=False)
+    frappe.db.commit()
+
+    # Send immediately or queue based on settings
+    if queue and settings.get("queue_enabled"):
+        return {"success": True, "message": _("Media message queued"), "log": log.name}
+    else:
+        result = process_media_message_log(log.name)
+        return result
+
+
+def process_media_message_log(log_name):
+    """
+    Process a media message log entry - actually send the media
+
+    Args:
+        log_name: WhatsApp Message Log document name
+
+    Returns:
+        dict: Result with success status
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+
+    try:
+        log = frappe.get_doc("WhatsApp Message Log", log_name)
+
+        # Only process Pending or Queued messages
+        if log.status not in ("Pending", "Queued"):
+            return {"success": False, "error": "Message already processed", "status": log.status}
+
+        settings = get_settings()
+
+        if not settings.get("enabled"):
+            log.mark_failed("WhatsApp notifications disabled")
+            return {"success": False, "error": "Disabled"}
+
+        # Update status to Sending
+        log.db_set("status", "Sending")
+        frappe.db.commit()
+
+        # Get stored media data
+        media_base64 = frappe.db.get_value("WhatsApp Message Log", log_name, "_media_base64")
+        mimetype = frappe.db.get_value("WhatsApp Message Log", log_name, "_media_mimetype")
+
+        if not media_base64:
+            # Try to regenerate the media
+            if log.reference_doctype and log.reference_name:
+                pdf_data = get_document_pdf(log.reference_doctype, log.reference_name)
+                if pdf_data.get("success"):
+                    media_base64 = pdf_data["base64"]
+                    mimetype = "application/pdf"
+                else:
+                    log.mark_failed("Could not regenerate media")
+                    return {"success": False, "error": "Could not regenerate media"}
+            else:
+                log.mark_failed("No media data available")
+                return {"success": False, "error": "No media data available"}
+
+        # Build API request
+        url = "{}/message/sendMedia/{}".format(
+            settings.get("api_url"),
+            settings.get("instance_name")
+        )
+
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "apikey": settings.get("api_key")
+        }
+
+        # Build payload for Evolution API
+        payload = {
+            "number": log.formatted_phone,
+            "mediatype": log.media_type or "document",
+            "mimetype": mimetype,
+            "caption": log.caption or "",
+            "media": "data:{};base64,{}".format(mimetype, media_base64),
+            "fileName": log.file_name or "document.pdf"
+        }
+
+        # Make request
+        try:
+            response = make_http_request(url, method="POST", headers=headers, data=payload)
+
+            # Extract message ID from response
+            response_id = None
+            if isinstance(response, dict):
+                response_id = response.get("key", {}).get("id") or response.get("messageId")
+
+            log.mark_sent(response_data=response, response_id=response_id)
+
+            # Clean up temporary media data
+            frappe.db.set_value("WhatsApp Message Log", log_name, "_media_base64", None, update_modified=False)
+            frappe.db.set_value("WhatsApp Message Log", log_name, "_media_mimetype", None, update_modified=False)
+            frappe.db.commit()
+
+            if settings.get("enable_debug_logging"):
+                frappe.log_error(
+                    "WhatsApp Media Sent: {} to {}".format(log.name, log.formatted_phone),
+                    "WhatsApp Debug"
+                )
+
+            return {"success": True, "log": log.name, "response_id": response_id}
+
+        except Exception as e:
+            error_msg = str(e)
+            log.mark_failed(error_msg)
+
+            frappe.log_error(
+                message=f"{log.name} -> {error_msg}",
+                title="WhatsApp Media Send Failed"
+            )
+
+            return {"success": False, "error": error_msg, "log": log.name}
+
+    except Exception as e:
+        frappe.log_error(
+            message=str(e),
+            title="WhatsApp Media Process Error"
+        )
+        return {"success": False, "error": str(e)}
+
+
+def get_document_pdf(doctype, docname, print_format=None):
+    """
+    Generate PDF from document print format
+
+    Args:
+        doctype: Document type
+        docname: Document name
+        print_format: Print format name (optional, uses Standard if not specified)
+
+    Returns:
+        dict: {success: True, base64: "...", filename: "...", size: ...} or error
+    """
+    try:
+        # Get print format
+        if not print_format:
+            print_format = "Standard"
+
+        # Generate PDF using frappe's print function
+        pdf_content = frappe.get_print(
+            doctype,
+            docname,
+            print_format,
+            as_pdf=True
+        )
+
+        if not pdf_content:
+            return {"success": False, "error": _("Could not generate PDF")}
+
+        # Convert to base64
+        pdf_base64 = base64.b64encode(pdf_content).decode("utf-8")
+
+        # Generate filename
+        filename = "{}-{}.pdf".format(doctype.replace(" ", "-"), docname)
+
+        return {
+            "success": True,
+            "base64": pdf_base64,
+            "filename": filename,
+            "size": len(pdf_content)
+        }
+
+    except Exception as e:
+        frappe.log_error(
+            message=str(e),
+            title="WhatsApp PDF Generation Error"
+        )
+        return {"success": False, "error": str(e)}
+
+
+def get_file_as_base64(file_url):
+    """
+    Get file content as base64
+
+    Args:
+        file_url: File URL (e.g., /files/myfile.pdf or /private/files/myfile.pdf)
+
+    Returns:
+        dict: {success: True, base64: "...", filename: "...", mimetype: "...", size: ...} or error
+    """
+    try:
+        # Get file path from URL
+        if file_url.startswith("/files/"):
+            file_path = frappe.get_site_path("public", "files", file_url.replace("/files/", ""))
+        elif file_url.startswith("/private/files/"):
+            file_path = frappe.get_site_path("private", "files", file_url.replace("/private/files/", ""))
+        else:
+            # Try to get from File doctype
+            file_doc = frappe.get_doc("File", {"file_url": file_url})
+            if file_doc:
+                file_path = file_doc.get_full_path()
+            else:
+                return {"success": False, "error": _("File not found")}
+
+        if not os.path.exists(file_path):
+            return {"success": False, "error": _("File not found: {0}").format(file_path)}
+
+        # Read file content
+        with open(file_path, "rb") as f:
+            file_content = f.read()
+
+        # Get filename
+        filename = os.path.basename(file_path)
+
+        # Determine mimetype
+        mimetype = get_mimetype(filename)
+
+        # Convert to base64
+        file_base64 = base64.b64encode(file_content).decode("utf-8")
+
+        return {
+            "success": True,
+            "base64": file_base64,
+            "filename": filename,
+            "mimetype": mimetype,
+            "size": len(file_content)
+        }
+
+    except Exception as e:
+        frappe.log_error(
+            message=str(e),
+            title="WhatsApp File Read Error"
+        )
+        return {"success": False, "error": str(e)}
+
+
+def get_mimetype(filename):
+    """
+    Get mimetype from filename extension
+
+    Args:
+        filename: File name with extension
+
+    Returns:
+        str: Mimetype
+    """
+    ext = filename.lower().split(".")[-1] if "." in filename else ""
+
+    mimetypes = {
+        # Documents
+        "pdf": "application/pdf",
+        "doc": "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls": "application/vnd.ms-excel",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt": "application/vnd.ms-powerpoint",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "txt": "text/plain",
+        "csv": "text/csv",
+        # Images
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "bmp": "image/bmp",
+        # Videos
+        "mp4": "video/mp4",
+        "avi": "video/x-msvideo",
+        "mov": "video/quicktime",
+        "wmv": "video/x-ms-wmv",
+        "webm": "video/webm",
+        # Audio
+        "mp3": "audio/mpeg",
+        "wav": "audio/wav",
+        "ogg": "audio/ogg",
+        "m4a": "audio/mp4",
+    }
+
+    return mimetypes.get(ext, "application/octet-stream")
+
+
+def get_media_type_from_mimetype(mimetype):
+    """
+    Get Evolution API media type from mimetype
+
+    Args:
+        mimetype: File mimetype
+
+    Returns:
+        str: Media type (image, video, audio, document)
+    """
+    if mimetype.startswith("image/"):
+        return "image"
+    elif mimetype.startswith("video/"):
+        return "video"
+    elif mimetype.startswith("audio/"):
+        return "audio"
+    else:
+        return "document"
+
+
+@frappe.whitelist()
+def get_document_attachments(doctype, docname):
+    """
+    Get list of attachments for a document
+
+    Args:
+        doctype: Document type
+        docname: Document name
+
+    Returns:
+        dict: List of attachments with file_url, file_name, file_size
+    """
+    try:
+        attachments = frappe.get_all(
+            "File",
+            filters={
+                "attached_to_doctype": doctype,
+                "attached_to_name": docname
+            },
+            fields=["name", "file_name", "file_url", "file_size", "is_private"]
+        )
+
+        return {"success": True, "attachments": attachments}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def get_print_formats(doctype):
+    """
+    Get available print formats for a DocType
+
+    Args:
+        doctype: Document type
+
+    Returns:
+        dict: List of print format names
+    """
+    try:
+        formats = frappe.get_all(
+            "Print Format",
+            filters={
+                "doc_type": doctype,
+                "disabled": 0
+            },
+            fields=["name"],
+            order_by="name"
+        )
+
+        # Add Standard option
+        result = [{"name": "Standard"}]
+        result.extend(formats)
+
+        return {"success": True, "print_formats": result}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def get_media_doctype_config(doctype):
+    """
+    Get WhatsApp media configuration for a DocType
+
+    Args:
+        doctype: Document type to check
+
+    Returns:
+        dict: Configuration if enabled, or not_enabled flag
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+
+    settings = get_settings()
+
+    if not settings.get("enabled"):
+        return {"success": False, "error": "WhatsApp notifications disabled"}
+
+    # Check if this doctype is enabled for media
+    media_doctypes = settings.get("media_doctypes", [])
+
+    for config in media_doctypes:
+        if config.get("document_type") == doctype:
+            return {
+                "success": True,
+                "enabled": True,
+                "phone_field": config.get("phone_field"),
+                "default_print_format": config.get("default_print_format"),
+                "caption_template": config.get("caption_template")
+            }
+
+    return {"success": True, "enabled": False}
+
+
+@frappe.whitelist()
+def get_all_media_doctypes():
+    """
+    Get list of all DocTypes enabled for WhatsApp media button
+
+    Returns:
+        dict: List of enabled DocTypes
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+
+    settings = get_settings()
+
+    if not settings.get("enabled"):
+        return {"success": False, "doctypes": []}
+
+    media_doctypes = settings.get("media_doctypes", [])
+    doctypes = [config.get("document_type") for config in media_doctypes if config.get("document_type")]
+
+    return {"success": True, "doctypes": doctypes}

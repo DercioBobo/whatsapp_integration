@@ -27,16 +27,20 @@ class WhatsAppMessageLog(Document):
         """
         if self.status != "Failed":
             frappe.throw(_("Only failed messages can be retried"))
-        
+
         self.status = "Pending"
         self.retry_count = (self.retry_count or 0) + 1
         self.error_message = None
         self.save(ignore_permissions=True)
-        
-        # Trigger immediate send
-        from whatsapp_notifications.whatsapp_notifications.api import process_message_log
-        process_message_log(self.name)
-        
+
+        # Trigger immediate send based on message type
+        if self.message_type in ("Media", "Document"):
+            from whatsapp_notifications.whatsapp_notifications.api import process_media_message_log
+            process_media_message_log(self.name)
+        else:
+            from whatsapp_notifications.whatsapp_notifications.api import process_message_log
+            process_message_log(self.name)
+
         return {"success": True, "message": _("Message queued for retry")}
     
     @frappe.whitelist()
@@ -83,12 +87,13 @@ class WhatsAppMessageLog(Document):
         self.save(ignore_permissions=True)
 
 
-def create_message_log(phone, message, reference_doctype=None, reference_name=None, 
+def create_message_log(phone, message, reference_doctype=None, reference_name=None,
                        notification_rule=None, recipient_name=None, formatted_phone=None,
-                       scheduled_time=None):
+                       scheduled_time=None, message_type=None, media_type=None,
+                       file_name=None, file_size=None, caption=None):
     """
     Create a new message log entry
-    
+
     Args:
         phone: Original phone number
         message: Message content
@@ -98,17 +103,22 @@ def create_message_log(phone, message, reference_doctype=None, reference_name=No
         recipient_name: Recipient display name
         formatted_phone: Phone number after formatting
         scheduled_time: When to send (for delayed messages)
-    
+        message_type: Type of message (Text, Media, Document)
+        media_type: Type of media (image, video, audio, document)
+        file_name: Name of the file being sent
+        file_size: Size of file in bytes
+        caption: Caption for media messages
+
     Returns:
         WhatsApp Message Log document
     """
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
 
-    
+
     # Format phone if not already formatted
     if not formatted_phone:
         formatted_phone = format_phone_number(phone)
-    
+
     log = frappe.get_doc({
         "doctype": "WhatsApp Message Log",
         "phone": phone,
@@ -119,12 +129,17 @@ def create_message_log(phone, message, reference_doctype=None, reference_name=No
         "notification_rule": notification_rule,
         "recipient_name": recipient_name,
         "scheduled_time": scheduled_time,
-        "status": "Queued" if scheduled_time else "Pending"
+        "status": "Queued" if scheduled_time else "Pending",
+        "message_type": message_type or "Text",
+        "media_type": media_type,
+        "file_name": file_name,
+        "file_size": file_size,
+        "caption": caption
     })
-    
+
     log.insert(ignore_permissions=True)
     frappe.db.commit()
-    
+
     return log
 
 
