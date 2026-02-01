@@ -35,6 +35,7 @@
         "column_break_advanced",
         "send_once",
         "active_days",
+        "enable_active_hours",
         "active_hours_start",
         "active_hours_end"
     ],
@@ -235,15 +236,25 @@
             "placeholder": "Mon,Tue,Wed,Thu,Fri"
         },
         {
+            "default": "0",
+            "fieldname": "enable_active_hours",
+            "fieldtype": "Check",
+            "label": "Restrict to Active Hours",
+            "description": "Only send notifications during specific hours"
+        },
+        {
             "fieldname": "active_hours_start",
             "fieldtype": "Time",
             "label": "Active Hours Start",
-            "description": "Only send during these hours"
+            "depends_on": "enable_active_hours",
+            "mandatory_depends_on": "enable_active_hours"
         },
         {
             "fieldname": "active_hours_end",
             "fieldtype": "Time",
-            "label": "Active Hours End"
+            "label": "Active Hours End",
+            "depends_on": "enable_active_hours",
+            "mandatory_depends_on": "enable_active_hours"
         }
     ],
     "index_web_pages_for_search": 1,
