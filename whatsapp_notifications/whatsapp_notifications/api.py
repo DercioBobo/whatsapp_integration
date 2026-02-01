@@ -449,9 +449,19 @@ def send_whatsapp_media(phone, doctype=None, docname=None, file_url=None,
         if not formatted_phone:
             return {"success": False, "error": _("Invalid phone number")}
 
+    # Debug logging
+    if settings.get("enable_debug_logging"):
+        frappe.log_error(
+            "send_whatsapp_media called: file_url='{}' (type: {}) | print_format='{}' | doctype={} | docname={}".format(
+                file_url, type(file_url).__name__, print_format, doctype, docname
+            ),
+            "WhatsApp Media API Debug"
+        )
+
     # Determine media type and get file data
     try:
-        if file_url:
+        # Only use file_url if it's a non-empty string
+        if file_url and isinstance(file_url, str) and file_url.strip():
             # Sending an attached file
             file_data = get_file_as_base64(file_url)
             if not file_data.get("success"):

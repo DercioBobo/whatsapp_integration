@@ -117,9 +117,9 @@
         },
         {
             "fieldname": "owner_number",
-            "fieldtype": "Data",
-            "label": "Business Owner Number",
-            "description": "WhatsApp number to receive admin notifications"
+            "fieldtype": "Small Text",
+            "label": "Default Notification Numbers",
+            "description": "WhatsApp numbers to receive admin/owner notifications (one per line)"
         },
         {
             "fieldname": "section_advanced",
