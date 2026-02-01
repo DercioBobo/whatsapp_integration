@@ -244,17 +244,21 @@
         },
         {
             "fieldname": "active_hours_start",
-            "fieldtype": "Time",
+            "fieldtype": "Data",
             "label": "Active Hours Start",
             "depends_on": "enable_active_hours",
-            "mandatory_depends_on": "enable_active_hours"
+            "mandatory_depends_on": "enable_active_hours",
+            "placeholder": "HH:MM (e.g., 09:00)",
+            "description": "Start time in 24-hour format"
         },
         {
             "fieldname": "active_hours_end",
-            "fieldtype": "Time",
+            "fieldtype": "Data",
             "label": "Active Hours End",
             "depends_on": "enable_active_hours",
-            "mandatory_depends_on": "enable_active_hours"
+            "mandatory_depends_on": "enable_active_hours",
+            "placeholder": "HH:MM (e.g., 18:00)",
+            "description": "End time in 24-hour format"
         }
     ],
     "index_web_pages_for_search": 1,

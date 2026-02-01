@@ -68,6 +68,8 @@ class WhatsAppNotificationRule(Document):
     
     def validate_time_settings(self):
         """Validate active hours settings"""
+        import re
+
         # If active hours restriction is not enabled, clear the time fields
         if not self.enable_active_hours:
             self.active_hours_start = None
@@ -77,6 +79,21 @@ class WhatsAppNotificationRule(Document):
         # If enabled, both times are required
         if not self.active_hours_start or not self.active_hours_end:
             frappe.throw(_("Both Active Hours Start and End must be set when 'Restrict to Active Hours' is enabled"))
+
+        # Validate time format (HH:MM or HH:MM:SS)
+        time_pattern = re.compile(r'^([01]?[0-9]|2[0-3]):([0-5][0-9])(:[0-5][0-9])?$')
+
+        if not time_pattern.match(self.active_hours_start):
+            frappe.throw(_("Active Hours Start must be in HH:MM format (e.g., 09:00)"))
+
+        if not time_pattern.match(self.active_hours_end):
+            frappe.throw(_("Active Hours End must be in HH:MM format (e.g., 18:00)"))
+
+        # Normalize to HH:MM:SS format
+        if len(self.active_hours_start) == 5:
+            self.active_hours_start = self.active_hours_start + ":00"
+        if len(self.active_hours_end) == 5:
+            self.active_hours_end = self.active_hours_end + ":00"
     
     def on_update(self):
         """Clear cache when rules change"""
@@ -152,7 +169,8 @@ class WhatsAppNotificationRule(Document):
     
     def is_within_active_hours(self):
         """Check if current time is within active hours"""
-        from frappe.utils import get_time, now_datetime
+        from frappe.utils import now_datetime
+        import datetime
 
         # If active hours restriction is not enabled, allow all times
         if not self.enable_active_hours:
@@ -162,16 +180,24 @@ class WhatsAppNotificationRule(Document):
         if not self.active_hours_start or not self.active_hours_end:
             return True
 
-        now = now_datetime().time()
-        start = get_time(self.active_hours_start)
-        end = get_time(self.active_hours_end)
+        try:
+            # Parse time strings (format: HH:MM or HH:MM:SS)
+            start_parts = self.active_hours_start.split(":")
+            end_parts = self.active_hours_end.split(":")
 
-        if start <= end:
-            # Normal range (e.g., 09:00 to 18:00)
-            return start <= now <= end
-        else:
-            # Overnight range (e.g., 22:00 to 06:00)
-            return now >= start or now <= end
+            start = datetime.time(int(start_parts[0]), int(start_parts[1]))
+            end = datetime.time(int(end_parts[0]), int(end_parts[1]))
+            now = now_datetime().time()
+
+            if start <= end:
+                # Normal range (e.g., 09:00 to 18:00)
+                return start <= now <= end
+            else:
+                # Overnight range (e.g., 22:00 to 06:00)
+                return now >= start or now <= end
+        except (ValueError, IndexError, AttributeError):
+            # If parsing fails, allow (don't block notifications due to config error)
+            return True
 
     def get_recipients(self, doc):
         """
