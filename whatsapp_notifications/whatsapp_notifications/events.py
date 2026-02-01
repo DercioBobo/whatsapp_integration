@@ -158,8 +158,25 @@ def process_rule(doc, rule, settings):
     """
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
 
+    # Get message_type early for debug logging
+    message_type = getattr(rule, 'message_type', 'Text Only') or 'Text Only'
+
+    # Debug: log rule processing start
+    if settings.get("enable_debug_logging"):
+        frappe.log_error(
+            "Processing rule: {} | message_type: {} | Doc: {}".format(
+                rule.name, message_type, doc.name
+            ),
+            "WhatsApp Rule Processing"
+        )
+
     # Check if rule is applicable
     if not rule.is_applicable(doc, get_event_name(rule.event)):
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Rule {} not applicable for doc {}".format(rule.name, doc.name),
+                "WhatsApp Rule Processing"
+            )
         return
 
     # Get recipients
@@ -177,7 +194,6 @@ def process_rule(doc, rule, settings):
     message = rule.render_message(doc)
 
     # For text-only, message is required
-    message_type = getattr(rule, 'message_type', 'Text Only') or 'Text Only'
     if message_type == 'Text Only' and not message:
         frappe.log_error(
             "Empty message for rule {} on {}".format(rule.name, doc.name),
@@ -222,8 +238,7 @@ def process_rule(doc, rule, settings):
                 scheduled_time=scheduled_time,
                 settings=settings,
                 message_type=message_type,
-                print_format=getattr(rule, 'print_format', None),
-                attach_document=getattr(rule, 'attach_document', False)
+                print_format=getattr(rule, 'print_format', None)
             )
         except Exception as e:
             frappe.log_error(
@@ -231,29 +246,34 @@ def process_rule(doc, rule, settings):
                 "WhatsApp Send Error"
             )
 
-    # Send to owner if configured
+    # Send to owner/default notification numbers if configured
     if rule.notify_owner and settings.get("owner_number"):
-        try:
-            owner_message = rule.render_message(doc, for_owner=True)
+        owner_message = rule.render_message(doc, for_owner=True)
 
-            send_notification(
-                phone=settings.get("owner_number"),
-                message=owner_message,
-                reference_doctype=doc.doctype,
-                reference_name=doc.name,
-                notification_rule=rule.name,
-                recipient_name="Business Owner",
-                scheduled_time=scheduled_time,
-                settings=settings,
-                message_type=message_type,
-                print_format=getattr(rule, 'print_format', None),
-                attach_document=getattr(rule, 'attach_document', False)
-            )
-        except Exception as e:
-            frappe.log_error(
-                "WhatsApp Owner Send Error ({}): {}".format(rule.name, str(e)),
-                "WhatsApp Send Error"
-            )
+        # Support multiple numbers (one per line)
+        owner_numbers = settings.get("owner_number", "").strip().split("\n")
+        for owner_num in owner_numbers:
+            owner_num = owner_num.strip()
+            if not owner_num:
+                continue
+            try:
+                send_notification(
+                    phone=owner_num,
+                    message=owner_message,
+                    reference_doctype=doc.doctype,
+                    reference_name=doc.name,
+                    notification_rule=rule.name,
+                    recipient_name="Default Notification",
+                    scheduled_time=scheduled_time,
+                    settings=settings,
+                    message_type=message_type,
+                    print_format=getattr(rule, 'print_format', None)
+                )
+            except Exception as e:
+                frappe.log_error(
+                    "WhatsApp Owner Send Error ({} to {}): {}".format(rule.name, owner_num, str(e)),
+                    "WhatsApp Send Error"
+                )
 
 
 def is_group_id(recipient):
@@ -263,7 +283,7 @@ def is_group_id(recipient):
 
 def send_notification(phone, message, reference_doctype, reference_name,
                       notification_rule, recipient_name, scheduled_time, settings,
-                      message_type="Text Only", print_format=None, attach_document=False):
+                      message_type="Text Only", print_format=None):
     """
     Create message log and optionally send immediately
 
@@ -276,9 +296,8 @@ def send_notification(phone, message, reference_doctype, reference_name,
         recipient_name: Recipient display name
         scheduled_time: When to send (None = immediate)
         settings: API settings dict
-        message_type: Type of message (Text Only, Document PDF, Text + Document PDF)
+        message_type: Type of message (Text Only, Attached File, Document PDF, Text + Attached File, Text + Document PDF)
         print_format: Print format for PDF generation
-        attach_document: Whether to attach an existing file instead of generating PDF
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
@@ -297,13 +316,38 @@ def send_notification(phone, message, reference_doctype, reference_name,
             )
             return
 
+    # Normalize message_type (backward compatibility for old values)
+    # Old values: "Text + Attached File", "Text + Document PDF"
+    # New values: "Attached File", "Document PDF"
+    if message_type in ("Text + Attached File",):
+        message_type = "Attached File"
+    elif message_type in ("Text + Document PDF",):
+        message_type = "Document PDF"
+
     # Determine if this is a media message
-    is_media = message_type in ("Document PDF", "Text + Document PDF", "Attached File", "Text + Attached File")
+    is_media = message_type in ("Document PDF", "Attached File")
+
+    # Debug logging
+    if settings.get("enable_debug_logging"):
+        frappe.log_error(
+            "send_notification: message_type='{}' | is_media={} | phone={} | rule={}".format(
+                message_type, is_media, phone, notification_rule
+            ),
+            "WhatsApp Send Debug"
+        )
 
     if is_media:
-        # Determine media source
-        use_attachment = message_type in ("Attached File", "Text + Attached File")
-        use_pdf = message_type in ("Document PDF", "Text + Document PDF")
+        # Determine media source - use exact matching to avoid confusion
+        use_attachment = (message_type == "Attached File")
+        use_pdf = (message_type == "Document PDF")
+
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Media notification: use_attachment={} | use_pdf={} | print_format={}".format(
+                    use_attachment, use_pdf, print_format
+                ),
+                "WhatsApp Media Debug"
+            )
 
         # Handle media message
         send_media_notification(
@@ -373,6 +417,15 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
     from whatsapp_notifications.whatsapp_notifications.api import (
         process_media_message_log, get_document_pdf, get_file_as_base64
     )
+
+    # Debug logging
+    if settings.get("enable_debug_logging"):
+        frappe.log_error(
+            "send_media_notification called: phone={} | doctype={} | docname={} | use_attachment={} | use_pdf={} | print_format={}".format(
+                phone, reference_doctype, reference_name, use_attachment, use_pdf, print_format
+            ),
+            "WhatsApp Media Function Entry"
+        )
 
     try:
         # Determine what to send
@@ -461,6 +514,15 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
                 "WhatsApp Media Error"
             )
             return
+
+        # Debug: log media preparation success
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Media prepared: filename={} | mimetype={} | size={} | media_type={}".format(
+                    filename, mimetype, file_size, media_type
+                ),
+                "WhatsApp Media Prepared"
+            )
 
         # Create message log with media details
         log = create_message_log(

@@ -25,7 +25,6 @@
         "section_message",
         "message_type",
         "print_format",
-        "attach_document",
         "message_template",
         "section_owner_notification",
         "notify_owner",
@@ -156,9 +155,9 @@
             "fieldname": "message_type",
             "fieldtype": "Select",
             "label": "Message Type",
-            "options": "Text Only\nAttached File\nDocument PDF\nText + Attached File\nText + Document PDF",
+            "options": "Text Only\nAttached File\nDocument PDF",
             "default": "Text Only",
-            "description": "What to send: Text Only, Attached File (first attachment), Document PDF (generated from print format), or combinations"
+            "description": "Text Only: sends message template. Attached File: sends first attachment with message as caption. Document PDF: generates PDF from print format with message as caption."
         },
         {
             "fieldname": "print_format",
@@ -178,20 +177,20 @@
         {
             "fieldname": "section_owner_notification",
             "fieldtype": "Section Break",
-            "label": "Business Owner Notification",
+            "label": "Default Notification Recipients",
             "collapsible": 1
         },
         {
             "default": "0",
             "fieldname": "notify_owner",
             "fieldtype": "Check",
-            "label": "Also Notify Business Owner",
-            "description": "Send a separate notification to the business owner configured in Evolution API Settings"
+            "label": "Also Send to Default Numbers",
+            "description": "Send a separate notification to the default numbers configured in Evolution API Settings"
         },
         {
             "fieldname": "owner_message_template",
             "fieldtype": "Code",
-            "label": "Owner Message Template",
+            "label": "Message Template for Default Recipients",
             "options": "Jinja",
             "description": "Separate template for owner notification. If empty, uses the same template.",
             "depends_on": "notify_owner"
