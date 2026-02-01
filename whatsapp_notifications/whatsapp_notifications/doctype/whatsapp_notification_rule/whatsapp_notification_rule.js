@@ -28,24 +28,6 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         frm.toggle_display('group_id', needs_group);
         frm.toggle_display('group_name', needs_group && frm.doc.group_id);
         frm.toggle_display('select_group_button', needs_group);
-
-        // Clear midnight values from time fields (they should be empty if user didn't set them)
-        if (frm.doc.active_hours_start === '00:00:00' || frm.doc.active_hours_start === '00:00') {
-            frm.set_value('active_hours_start', null);
-        }
-        if (frm.doc.active_hours_end === '00:00:00' || frm.doc.active_hours_end === '00:00') {
-            frm.set_value('active_hours_end', null);
-        }
-    },
-
-    before_save: function(frm) {
-        // Clear midnight values before save
-        if (frm.doc.active_hours_start === '00:00:00' || frm.doc.active_hours_start === '00:00') {
-            frm.doc.active_hours_start = null;
-        }
-        if (frm.doc.active_hours_end === '00:00:00' || frm.doc.active_hours_end === '00:00') {
-            frm.doc.active_hours_end = null;
-        }
     },
     
     document_type: function(frm) {
