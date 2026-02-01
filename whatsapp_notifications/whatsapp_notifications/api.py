@@ -40,8 +40,8 @@ def make_http_request(url, method="POST", headers=None, data=None):
 
     except ImportError:
         pass
-    except Exception as e:
-        frappe.log_error("integrations.utils failed: " + str(e), "WhatsApp HTTP Debug")
+    except Exception:
+        pass  # Fall through to next method
 
     # Method 2: frappe.make_post_request (v13)
     try:
@@ -61,8 +61,8 @@ def make_http_request(url, method="POST", headers=None, data=None):
 
     except AttributeError:
         pass
-    except Exception as e:
-        frappe.log_error("frappe.make_post_request failed: " + str(e), "WhatsApp HTTP Debug")
+    except Exception:
+        pass  # Fall through to next method
 
     # Method 3: requests library (fallback)
     import requests
