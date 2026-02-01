@@ -238,7 +238,8 @@ def process_rule(doc, rule, settings):
                 scheduled_time=scheduled_time,
                 settings=settings,
                 message_type=message_type,
-                print_format=getattr(rule, 'print_format', None)
+                print_format=getattr(rule, 'print_format', None),
+                fixed_file_url=getattr(rule, 'fixed_file', None)
             )
         except Exception as e:
             frappe.log_error(
@@ -267,7 +268,8 @@ def process_rule(doc, rule, settings):
                     scheduled_time=scheduled_time,
                     settings=settings,
                     message_type=message_type,
-                    print_format=getattr(rule, 'print_format', None)
+                    print_format=getattr(rule, 'print_format', None),
+                    fixed_file_url=getattr(rule, 'fixed_file', None)
                 )
             except Exception as e:
                 frappe.log_error(
@@ -283,7 +285,7 @@ def is_group_id(recipient):
 
 def send_notification(phone, message, reference_doctype, reference_name,
                       notification_rule, recipient_name, scheduled_time, settings,
-                      message_type="Text Only", print_format=None):
+                      message_type="Text Only", print_format=None, fixed_file_url=None):
     """
     Create message log and optionally send immediately
 
@@ -296,8 +298,9 @@ def send_notification(phone, message, reference_doctype, reference_name,
         recipient_name: Recipient display name
         scheduled_time: When to send (None = immediate)
         settings: API settings dict
-        message_type: Type of message (Text Only, Attached File, Document PDF, Text + Attached File, Text + Document PDF)
+        message_type: Type of message (Text Only, Attached File, Document PDF, Fixed File)
         print_format: Print format for PDF generation
+        fixed_file_url: URL of fixed file to send (for Fixed File message type)
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
@@ -325,7 +328,7 @@ def send_notification(phone, message, reference_doctype, reference_name,
         message_type = "Document PDF"
 
     # Determine if this is a media message
-    is_media = message_type in ("Document PDF", "Attached File")
+    is_media = message_type in ("Document PDF", "Attached File", "Fixed File")
 
     # Debug logging
     if settings.get("enable_debug_logging"):
@@ -340,11 +343,12 @@ def send_notification(phone, message, reference_doctype, reference_name,
         # Determine media source - use exact matching to avoid confusion
         use_attachment = (message_type == "Attached File")
         use_pdf = (message_type == "Document PDF")
+        use_fixed_file = (message_type == "Fixed File")
 
         if settings.get("enable_debug_logging"):
             frappe.log_error(
-                "Media notification: use_attachment={} | use_pdf={} | print_format={}".format(
-                    use_attachment, use_pdf, print_format
+                "Media notification: use_attachment={} | use_pdf={} | use_fixed_file={} | print_format={}".format(
+                    use_attachment, use_pdf, use_fixed_file, print_format
                 ),
                 "WhatsApp Media Debug"
             )
@@ -362,7 +366,9 @@ def send_notification(phone, message, reference_doctype, reference_name,
             settings=settings,
             print_format=print_format,
             use_attachment=use_attachment,
-            use_pdf=use_pdf
+            use_pdf=use_pdf,
+            use_fixed_file=use_fixed_file,
+            fixed_file_url=fixed_file_url
         )
     else:
         # Handle text-only message
@@ -395,9 +401,10 @@ def send_notification(phone, message, reference_doctype, reference_name,
 
 def send_media_notification(phone, formatted_phone, message, reference_doctype, reference_name,
                             notification_rule, recipient_name, scheduled_time, settings,
-                            print_format=None, use_attachment=False, use_pdf=False):
+                            print_format=None, use_attachment=False, use_pdf=False,
+                            use_fixed_file=False, fixed_file_url=None):
     """
-    Send a media notification (document PDF or attachment)
+    Send a media notification (document PDF, attachment, or fixed file)
 
     Args:
         phone: Original phone number
@@ -410,8 +417,10 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
         scheduled_time: When to send (None = immediate)
         settings: API settings dict
         print_format: Print format for PDF generation
-        use_attachment: Whether to send attached file
+        use_attachment: Whether to send attached file from document
         use_pdf: Whether to generate and send PDF
+        use_fixed_file: Whether to send a fixed file
+        fixed_file_url: URL of the fixed file to send
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.whatsapp_notifications.api import (
@@ -421,8 +430,8 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
     # Debug logging
     if settings.get("enable_debug_logging"):
         frappe.log_error(
-            "send_media_notification called: phone={} | doctype={} | docname={} | use_attachment={} | use_pdf={} | print_format={}".format(
-                phone, reference_doctype, reference_name, use_attachment, use_pdf, print_format
+            "send_media_notification called: phone={} | use_attachment={} | use_pdf={} | use_fixed_file={} | fixed_file={}".format(
+                phone, use_attachment, use_pdf, use_fixed_file, fixed_file_url
             ),
             "WhatsApp Media Function Entry"
         )
@@ -477,6 +486,40 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
                 frappe.log_error(
                     "No attachments found for {} {}".format(reference_doctype, reference_name),
                     "WhatsApp Attachment Error"
+                )
+                return
+
+        elif use_fixed_file:
+            # Send a fixed/static file (catalog, price list, etc.)
+            if not fixed_file_url:
+                frappe.log_error(
+                    "Fixed file not configured for rule {}".format(notification_rule),
+                    "WhatsApp Fixed File Error"
+                )
+                return
+
+            file_data = get_file_as_base64(fixed_file_url)
+            if file_data.get("success"):
+                media_base64 = file_data["base64"]
+                mimetype = file_data["mimetype"]
+                filename = file_data["filename"]
+                file_size = file_data.get("size", 0)
+
+                # Determine media type from mimetype
+                if mimetype.startswith("image/"):
+                    media_type = "image"
+                elif mimetype.startswith("video/"):
+                    media_type = "video"
+                elif mimetype.startswith("audio/"):
+                    media_type = "audio"
+                else:
+                    media_type = "document"
+            else:
+                frappe.log_error(
+                    "Could not read fixed file {}: {}".format(
+                        fixed_file_url, file_data.get("error")
+                    ),
+                    "WhatsApp Fixed File Error"
                 )
                 return
 

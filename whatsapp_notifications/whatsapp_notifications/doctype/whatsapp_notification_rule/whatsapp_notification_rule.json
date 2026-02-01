@@ -25,6 +25,7 @@
         "section_message",
         "message_type",
         "print_format",
+        "fixed_file",
         "message_template",
         "section_owner_notification",
         "notify_owner",
@@ -156,16 +157,23 @@
             "fieldname": "message_type",
             "fieldtype": "Select",
             "label": "Message Type",
-            "options": "Text Only\nAttached File\nDocument PDF",
+            "options": "Text Only\nAttached File\nDocument PDF\nFixed File",
             "default": "Text Only",
-            "description": "Text Only: sends message template. Attached File: sends first attachment with message as caption. Document PDF: generates PDF from print format with message as caption."
+            "description": "Text Only: sends message template. Attached File: sends first attachment. Document PDF: generates PDF from print format. Fixed File: sends a specific file (catalog, price list, etc.)"
         },
         {
             "fieldname": "print_format",
             "fieldtype": "Data",
             "label": "Print Format",
             "description": "Print format to use for PDF generation. Leave empty for 'Standard'",
-            "depends_on": "eval:doc.message_type=='Document PDF' || doc.message_type=='Text + Document PDF'"
+            "depends_on": "eval:doc.message_type=='Document PDF'"
+        },
+        {
+            "fieldname": "fixed_file",
+            "fieldtype": "Attach",
+            "label": "Fixed File",
+            "description": "Select or upload a file to always send with this rule (e.g., catalog, price list)",
+            "depends_on": "eval:doc.message_type=='Fixed File'"
         },
         {
             "fieldname": "message_template",
