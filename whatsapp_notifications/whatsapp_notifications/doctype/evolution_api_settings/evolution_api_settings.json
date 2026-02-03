@@ -13,6 +13,9 @@
         "column_break_connection",
         "connection_status",
         "last_checked",
+        "section_webhook",
+        "webhook_url",
+        "copy_webhook_url",
         "section_defaults",
         "default_country_code",
         "local_number_length",
@@ -84,6 +87,23 @@
             "fieldtype": "Datetime",
             "label": "Last Checked",
             "read_only": 1
+        },
+        {
+            "fieldname": "section_webhook",
+            "fieldtype": "Section Break",
+            "label": "Webhook Configuration (for Approvals)"
+        },
+        {
+            "fieldname": "webhook_url",
+            "fieldtype": "Data",
+            "label": "Webhook URL",
+            "read_only": 1,
+            "description": "Configure this URL in Evolution API to receive incoming messages for approval responses"
+        },
+        {
+            "fieldname": "copy_webhook_url",
+            "fieldtype": "Button",
+            "label": "Copy Webhook URL"
         },
         {
             "fieldname": "section_defaults",

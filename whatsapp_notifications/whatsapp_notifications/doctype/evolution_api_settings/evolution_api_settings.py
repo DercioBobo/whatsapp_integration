@@ -12,7 +12,17 @@ class EvolutionAPISettings(Document):
     Single DocType for Evolution API configuration
     Stores connection details, phone formatting rules, and advanced settings
     """
-    
+
+    def onload(self):
+        """Set webhook URL when document is loaded"""
+        self.set_webhook_url()
+
+    def set_webhook_url(self):
+        """Generate and set the webhook URL for Evolution API"""
+        site_url = frappe.utils.get_url()
+        webhook_endpoint = "/api/method/whatsapp_notifications.whatsapp_notifications.webhook.receive_message"
+        self.webhook_url = site_url + webhook_endpoint
+
     def validate(self):
         """Validate settings before save"""
         self.validate_api_url()

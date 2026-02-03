@@ -108,6 +108,7 @@ doc_events = {
         "on_submit": "whatsapp_notifications.whatsapp_notifications.events.handle_on_submit",
         "on_cancel": "whatsapp_notifications.whatsapp_notifications.events.handle_on_cancel",
         "on_trash": "whatsapp_notifications.whatsapp_notifications.events.handle_on_trash",
+        "on_update_after_submit": "whatsapp_notifications.whatsapp_notifications.approval.handle_workflow_state_change",
     }
 }
 
@@ -134,7 +135,8 @@ scheduler_events = {
         "whatsapp_notifications.whatsapp_notifications.tasks.process_pending_messages"
     ],
     "hourly": [
-        "whatsapp_notifications.whatsapp_notifications.tasks.retry_failed_messages"
+        "whatsapp_notifications.whatsapp_notifications.tasks.retry_failed_messages",
+        "whatsapp_notifications.whatsapp_notifications.approval.expire_old_requests"
     ],
     "daily": [
         "whatsapp_notifications.whatsapp_notifications.tasks.cleanup_old_logs"

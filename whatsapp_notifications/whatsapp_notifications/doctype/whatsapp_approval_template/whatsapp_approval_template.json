@@ -1,0 +1,177 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "field:template_name",
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "enabled",
+        "template_name",
+        "section_trigger",
+        "document_type",
+        "workflow_state",
+        "column_break_trigger",
+        "phone_field",
+        "section_message",
+        "message_template",
+        "section_options",
+        "response_options",
+        "section_expiry",
+        "expiry_hours",
+        "column_break_expiry",
+        "allow_multiple_pending",
+        "section_confirmation",
+        "send_confirmation",
+        "confirmation_template"
+    ],
+    "fields": [
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled"
+        },
+        {
+            "fieldname": "template_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Template Name",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "section_trigger",
+            "fieldtype": "Section Break",
+            "label": "Trigger Configuration"
+        },
+        {
+            "fieldname": "document_type",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Document Type",
+            "options": "DocType",
+            "reqd": 1,
+            "description": "DocType that this approval template applies to"
+        },
+        {
+            "fieldname": "workflow_state",
+            "fieldtype": "Data",
+            "label": "Trigger on Workflow State",
+            "description": "Automatically send approval request when document enters this workflow state (leave empty for manual trigger only)"
+        },
+        {
+            "fieldname": "column_break_trigger",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "phone_field",
+            "fieldtype": "Data",
+            "label": "Phone Field",
+            "description": "Document field containing approver's phone number (e.g., custom_approver_phone, owner_phone). Can use dot notation for linked docs (e.g., owner.mobile_no)"
+        },
+        {
+            "fieldname": "section_message",
+            "fieldtype": "Section Break",
+            "label": "Message Template"
+        },
+        {
+            "fieldname": "message_template",
+            "fieldtype": "Code",
+            "label": "Message Template",
+            "reqd": 1,
+            "options": "Jinja",
+            "description": "Jinja2 template for approval message. Use {{ doc.fieldname }} for document fields. The response options will be automatically appended."
+        },
+        {
+            "fieldname": "section_options",
+            "fieldtype": "Section Break",
+            "label": "Response Options"
+        },
+        {
+            "fieldname": "response_options",
+            "fieldtype": "Table",
+            "label": "Response Options",
+            "options": "WhatsApp Approval Option",
+            "reqd": 1,
+            "description": "Define the numbered options the user can reply with"
+        },
+        {
+            "fieldname": "section_expiry",
+            "fieldtype": "Section Break",
+            "label": "Expiry Settings"
+        },
+        {
+            "default": "24",
+            "fieldname": "expiry_hours",
+            "fieldtype": "Int",
+            "label": "Expiry Hours",
+            "description": "Approval request expires after this many hours (default: 24)"
+        },
+        {
+            "fieldname": "column_break_expiry",
+            "fieldtype": "Column Break"
+        },
+        {
+            "default": "0",
+            "fieldname": "allow_multiple_pending",
+            "fieldtype": "Check",
+            "label": "Allow Multiple Pending Requests",
+            "description": "Allow multiple pending approval requests for the same document. If unchecked, sending a new request will cancel previous pending ones."
+        },
+        {
+            "fieldname": "section_confirmation",
+            "fieldtype": "Section Break",
+            "label": "Confirmation Message",
+            "collapsible": 1
+        },
+        {
+            "default": "1",
+            "fieldname": "send_confirmation",
+            "fieldtype": "Check",
+            "label": "Send Confirmation",
+            "description": "Send a confirmation message after the user responds"
+        },
+        {
+            "fieldname": "confirmation_template",
+            "fieldtype": "Code",
+            "label": "Confirmation Template",
+            "options": "Jinja",
+            "depends_on": "send_confirmation",
+            "description": "Jinja2 template for confirmation message. Available variables: {{ doc }}, {{ option_label }}, {{ action_result }}"
+        }
+    ],
+    "index_web_pages_for_search": 1,
+    "links": [
+        {
+            "link_doctype": "WhatsApp Approval Request",
+            "link_fieldname": "approval_template"
+        }
+    ],
+    "modified": "2024-01-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "WhatsApp Notifications",
+    "name": "WhatsApp Approval Template",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "quick_entry": 0,
+    "search_fields": "document_type,workflow_state",
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 1
+}

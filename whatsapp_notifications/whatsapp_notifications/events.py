@@ -47,6 +47,9 @@ SYSTEM_DOCTYPES = (
     # WhatsApp Notifications own doctypes (prevent recursion)
     "WhatsApp Message Log",
     "Evolution API Settings",
+    "WhatsApp Approval Request",
+    "WhatsApp Approval Template",
+    "WhatsApp Approval Option",
 )
 
 
@@ -58,6 +61,9 @@ def handle_after_insert(doc, method=None):
 def handle_on_update(doc, method=None):
     """Handle on_update event for all DocTypes"""
     process_event(doc, "on_update")
+
+    # Also check for workflow state changes (for non-submittable documents)
+    check_workflow_state_for_approval(doc)
 
 
 def handle_on_submit(doc, method=None):
@@ -637,11 +643,11 @@ def get_event_name(event_label):
 def get_recipient_name(doc, phone_field):
     """
     Try to get recipient name from document
-    
+
     Args:
         doc: The document
         phone_field: The phone field path
-    
+
     Returns:
         str: Recipient name or None
     """
@@ -659,11 +665,31 @@ def get_recipient_name(doc, phone_field):
         "employee_name",
         "nome"  # Portuguese
     ]
-    
+
     for field in name_fields:
         if hasattr(doc, field):
             value = getattr(doc, field)
             if value:
                 return str(value)
-    
+
     return None
+
+
+def check_workflow_state_for_approval(doc):
+    """
+    Check if workflow state changed and trigger approval if configured
+
+    Args:
+        doc: The document that was updated
+    """
+    # Skip if document doesn't have workflow_state
+    if not hasattr(doc, "workflow_state") or not doc.workflow_state:
+        return
+
+    # Check if workflow_state changed
+    if not doc.has_value_changed("workflow_state"):
+        return
+
+    # Delegate to approval handler
+    from whatsapp_notifications.whatsapp_notifications.approval import handle_workflow_state_change
+    handle_workflow_state_change(doc)

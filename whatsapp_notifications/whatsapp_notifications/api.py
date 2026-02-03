@@ -903,6 +903,128 @@ def get_print_formats(doctype):
         return {"success": False, "error": str(e)}
 
 
+# ============================================================
+# Approval Functions
+# ============================================================
+
+@frappe.whitelist()
+def send_approval(doctype, docname, template_name, phone=None):
+    """
+    Send an approval request via WhatsApp (manual trigger)
+
+    Args:
+        doctype: Document type
+        docname: Document name
+        template_name: WhatsApp Approval Template name
+        phone: Override phone number (optional)
+
+    Returns:
+        dict: Result with success status and approval request name
+    """
+    from whatsapp_notifications.whatsapp_notifications.approval import send_approval_request
+
+    return send_approval_request(doctype, docname, template_name, phone)
+
+
+@frappe.whitelist()
+def cancel_approval(approval_request_name):
+    """
+    Cancel a pending approval request
+
+    Args:
+        approval_request_name: WhatsApp Approval Request name
+
+    Returns:
+        dict: Result with success status
+    """
+    try:
+        approval_request = frappe.get_doc("WhatsApp Approval Request", approval_request_name)
+
+        if approval_request.status != "Pending":
+            return {
+                "success": False,
+                "error": _("Cannot cancel - request is not pending (status: {0})").format(
+                    approval_request.status
+                )
+            }
+
+        approval_request.mark_cancelled("Cancelled by user")
+        frappe.db.commit()
+
+        return {"success": True, "message": _("Approval request cancelled")}
+
+    except frappe.DoesNotExistError:
+        return {"success": False, "error": _("Approval request not found")}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def get_pending_approvals(doctype=None, docname=None):
+    """
+    Get pending approval requests
+
+    Args:
+        doctype: Filter by document type (optional)
+        docname: Filter by document name (optional)
+
+    Returns:
+        dict: List of pending approval requests
+    """
+    try:
+        filters = {"status": "Pending"}
+
+        if doctype:
+            filters["reference_doctype"] = doctype
+        if docname:
+            filters["reference_name"] = docname
+
+        approvals = frappe.get_all(
+            "WhatsApp Approval Request",
+            filters=filters,
+            fields=[
+                "name", "approval_template", "reference_doctype", "reference_name",
+                "recipient_phone", "recipient_name", "sent_at", "expires_at"
+            ],
+            order_by="creation desc"
+        )
+
+        return {"success": True, "approvals": approvals}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def get_approval_templates(doctype=None):
+    """
+    Get available approval templates
+
+    Args:
+        doctype: Filter by document type (optional)
+
+    Returns:
+        dict: List of approval templates
+    """
+    try:
+        filters = {"enabled": 1}
+
+        if doctype:
+            filters["document_type"] = doctype
+
+        templates = frappe.get_all(
+            "WhatsApp Approval Template",
+            filters=filters,
+            fields=["name", "template_name", "document_type", "workflow_state"],
+            order_by="template_name"
+        )
+
+        return {"success": True, "templates": templates}
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @frappe.whitelist()
 def get_media_doctype_config(doctype):
     """
