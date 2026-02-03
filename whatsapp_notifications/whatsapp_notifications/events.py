@@ -729,10 +729,10 @@ def check_approval_event_trigger(doc, event):
             settings = get_settings()
             if settings.get("enable_debug_logging"):
                 frappe.log_error(
-                    "check_approval_event_trigger error for {} {} ({}): {}".format(
+                    message="DocType: {} | Doc: {} | Event: {} | Error: {}".format(
                         doc.doctype, doc.name, event, str(e)
                     ),
-                    "WhatsApp Approval Event Trigger Error"
+                    title="Approval Trigger Error"
                 )
         except Exception:
             pass

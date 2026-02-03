@@ -342,8 +342,8 @@ def get_templates_for_event(doctype, event):
 
         if settings.get("enable_debug_logging"):
             frappe.log_error(
-                "get_templates_for_event query - doctype: '{}', event: '{}'".format(doctype, event),
-                "WhatsApp Approval Query Debug"
+                message="Query: doctype='{}', event='{}'".format(doctype, event),
+                title="Approval Query"
             )
 
         templates = frappe.get_all(
@@ -359,11 +359,11 @@ def get_templates_for_event(doctype, event):
                 fields=["name", "event"]
             )
             frappe.log_error(
-                "Templates found for {}: {} | All templates for this doctype: {}".format(
+                message="Event: {} | Found: {} | All for doctype: {}".format(
                     event, [t.name for t in templates],
                     [(t.name, t.event) for t in all_templates]
                 ),
-                "WhatsApp Approval Query Result"
+                title="Approval Query Result"
             )
 
         return [frappe.get_doc("WhatsApp Approval Template", t.name) for t in templates]

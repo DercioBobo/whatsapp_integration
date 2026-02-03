@@ -660,10 +660,8 @@ def handle_document_event(doc, event):
         # Debug: log that we're checking for approval event triggers
         if settings.get("enable_debug_logging"):
             frappe.log_error(
-                "Checking approval event trigger: {} on {} {}".format(
-                    event, doc.doctype, doc.name
-                ),
-                "WhatsApp Approval Event Check"
+                message="Event: {} | DocType: {} | Doc: {}".format(event, doc.doctype, doc.name),
+                title="Approval Event Check"
             )
 
         # Get matching templates for this event
@@ -672,10 +670,10 @@ def handle_document_event(doc, event):
         # Debug: log query results (always log to help diagnose issues)
         if settings.get("enable_debug_logging"):
             frappe.log_error(
-                "Found {} approval templates for {} event on {} (doc: {})".format(
+                message="Found {} templates for {} on {} ({})".format(
                     len(templates), event, doc.doctype, doc.name
                 ),
-                "WhatsApp Approval Event Result"
+                title="Approval Event Result"
             )
 
         if not templates:
