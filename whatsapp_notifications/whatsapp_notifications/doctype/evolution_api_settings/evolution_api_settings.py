@@ -54,6 +54,122 @@ class EvolutionAPISettings(Document):
         frappe.cache().delete_key("evolution_api_settings")
     
     @frappe.whitelist()
+    def configure_webhook(self):
+        """
+        Configure webhook in Evolution API to receive incoming messages
+        """
+        if not self.api_url or not self.api_key or not self.instance_name:
+            return {
+                "success": False,
+                "message": _("Please configure API URL, API Key, and Instance Name first")
+            }
+
+        try:
+            # Build webhook URL
+            site_url = frappe.utils.get_url()
+            webhook_endpoint = "/api/method/whatsapp_notifications.whatsapp_notifications.webhook.receive_message"
+            webhook_url = site_url + webhook_endpoint
+
+            # Build API request
+            url = "{}/webhook/set/{}".format(
+                self.api_url, self.instance_name
+            )
+
+            headers = {
+                "Content-Type": "application/json",
+                "apikey": self.get_password("api_key") or self.api_key
+            }
+
+            payload = {
+                "webhook": {
+                    "enabled": True,
+                    "url": webhook_url,
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "byEvents": True,
+                    "base64": False,
+                    "events": [
+                        "MESSAGES_UPSERT"
+                    ]
+                }
+            }
+
+            # Make request
+            response = make_request("POST", url, headers=headers, data=payload)
+
+            if response:
+                self.db_set("webhook_status", "Configured - {}".format(frappe.utils.now()))
+                return {
+                    "success": True,
+                    "message": _("Webhook configured successfully in Evolution API"),
+                    "webhook_url": webhook_url
+                }
+            else:
+                self.db_set("webhook_status", "Error: No response")
+                return {
+                    "success": False,
+                    "message": _("No response from Evolution API")
+                }
+
+        except Exception as e:
+            error_msg = str(e)
+            self.db_set("webhook_status", "Error: {}".format(error_msg[:100]))
+
+            frappe.log_error(
+                "Evolution API Webhook Configuration Failed: {}".format(error_msg),
+                "WhatsApp Webhook Error"
+            )
+
+            return {
+                "success": False,
+                "message": _("Failed to configure webhook: {}").format(error_msg)
+            }
+
+    @frappe.whitelist()
+    def get_webhook_status(self):
+        """
+        Get current webhook configuration from Evolution API
+        """
+        if not self.api_url or not self.api_key or not self.instance_name:
+            return {
+                "success": False,
+                "message": _("Please configure API URL, API Key, and Instance Name first")
+            }
+
+        try:
+            url = "{}/webhook/find/{}".format(
+                self.api_url, self.instance_name
+            )
+
+            headers = {
+                "Content-Type": "application/json",
+                "apikey": self.get_password("api_key") or self.api_key
+            }
+
+            response = make_request("GET", url, headers=headers)
+
+            if response:
+                webhook_data = response.get("webhook", response)
+                return {
+                    "success": True,
+                    "enabled": webhook_data.get("enabled", False),
+                    "url": webhook_data.get("url", ""),
+                    "events": webhook_data.get("events", [])
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": _("No webhook configuration found")
+                }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "message": str(e)
+            }
+
+    @frappe.whitelist()
     def test_connection(self):
         """
         Test the Evolution API connection

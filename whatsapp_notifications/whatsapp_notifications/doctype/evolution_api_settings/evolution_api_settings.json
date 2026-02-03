@@ -15,7 +15,9 @@
         "last_checked",
         "section_webhook",
         "webhook_url",
-        "copy_webhook_url",
+        "webhook_buttons",
+        "configure_webhook",
+        "webhook_status",
         "section_defaults",
         "default_country_code",
         "local_number_length",
@@ -98,12 +100,24 @@
             "fieldtype": "Data",
             "label": "Webhook URL",
             "read_only": 1,
-            "description": "Configure this URL in Evolution API to receive incoming messages for approval responses"
+            "description": "This URL receives incoming messages from Evolution API for approval responses"
         },
         {
-            "fieldname": "copy_webhook_url",
+            "fieldname": "webhook_buttons",
+            "fieldtype": "HTML",
+            "options": "<div class='webhook-buttons'></div>"
+        },
+        {
+            "fieldname": "configure_webhook",
             "fieldtype": "Button",
-            "label": "Copy Webhook URL"
+            "label": "Configure Webhook in Evolution API"
+        },
+        {
+            "fieldname": "webhook_status",
+            "fieldtype": "Data",
+            "label": "Webhook Status",
+            "read_only": 1,
+            "description": "Status of webhook configuration in Evolution API"
         },
         {
             "fieldname": "section_defaults",
