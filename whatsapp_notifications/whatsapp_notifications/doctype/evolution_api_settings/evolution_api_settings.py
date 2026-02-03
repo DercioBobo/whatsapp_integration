@@ -300,28 +300,58 @@ def get_settings():
 def make_request(method, url, headers=None, data=None):
     """
     Make HTTP request compatible with v13-v15
-    Uses frappe's built-in methods which work in sandbox
     """
     import json
-    
+
+    headers = headers or {}
+
+    # Method 1: frappe.integrations.utils (v14+)
     try:
+        from frappe.integrations.utils import make_post_request, make_get_request
+
         if method.upper() == "GET":
-            # For v13 compatibility, use make_get_request if available
-            if hasattr(frappe, "make_get_request"):
-                return frappe.make_get_request(url, headers=headers)
-            else:
-                # Fallback for older versions
-                import requests
-                response = requests.get(url, headers=headers, timeout=30)
-                return response.json()
-        
+            return make_get_request(url, headers=headers)
         elif method.upper() == "POST":
-            # Use make_post_request which works in v13 sandbox
             if isinstance(data, dict):
-                data = json.dumps(data)
-            
-            return frappe.make_post_request(url, headers=headers, data=data)
-    
+                # Try with json parameter first
+                try:
+                    return make_post_request(url, headers=headers, json=data)
+                except TypeError:
+                    # Fallback: encode manually
+                    headers["Content-Type"] = "application/json; charset=utf-8"
+                    return make_post_request(url, headers=headers, data=json.dumps(data, ensure_ascii=False).encode("utf-8"))
+            else:
+                return make_post_request(url, headers=headers, data=data)
+
+    except ImportError:
+        pass
+    except Exception as e:
+        # Log but continue to fallback
+        frappe.log_error(
+            "integrations.utils failed: {} - trying fallback".format(str(e)),
+            "WhatsApp HTTP Debug"
+        )
+
+    # Method 2: requests library (fallback)
+    try:
+        import requests
+
+        if method.upper() == "GET":
+            response = requests.get(url, headers=headers, timeout=30)
+        elif method.upper() == "POST":
+            if isinstance(data, dict):
+                headers["Content-Type"] = "application/json; charset=utf-8"
+                response = requests.post(url, headers=headers, json=data, timeout=60)
+            else:
+                response = requests.post(url, headers=headers, data=data, timeout=60)
+        else:
+            raise ValueError("Unsupported HTTP method: {}".format(method))
+
+        if not response.ok:
+            raise Exception("HTTP {}: {}".format(response.status_code, response.text[:500]))
+
+        return response.json()
+
     except Exception as e:
         frappe.log_error(
             "HTTP Request Failed: {} {} - {}".format(method, url, str(e)),
