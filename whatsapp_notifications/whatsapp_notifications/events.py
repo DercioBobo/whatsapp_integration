@@ -56,12 +56,15 @@ SYSTEM_DOCTYPES = (
 def handle_after_insert(doc, method=None):
     """Handle after_insert event for all DocTypes"""
     process_event(doc, "after_insert")
+    # Check for approval triggers
+    check_approval_event_trigger(doc, "After Insert")
 
 
 def handle_on_update(doc, method=None):
     """Handle on_update event for all DocTypes"""
     process_event(doc, "on_update")
-
+    # Check for approval triggers
+    check_approval_event_trigger(doc, "On Update")
     # Also check for workflow state changes (for non-submittable documents)
     check_workflow_state_for_approval(doc)
 
@@ -69,11 +72,15 @@ def handle_on_update(doc, method=None):
 def handle_on_submit(doc, method=None):
     """Handle on_submit event for all DocTypes"""
     process_event(doc, "on_submit")
+    # Check for approval triggers
+    check_approval_event_trigger(doc, "On Submit")
 
 
 def handle_on_cancel(doc, method=None):
     """Handle on_cancel event for all DocTypes"""
     process_event(doc, "on_cancel")
+    # Check for approval triggers
+    check_approval_event_trigger(doc, "On Cancel")
 
 
 def handle_on_trash(doc, method=None):
@@ -693,3 +700,20 @@ def check_workflow_state_for_approval(doc):
     # Delegate to approval handler
     from whatsapp_notifications.whatsapp_notifications.approval import handle_workflow_state_change
     handle_workflow_state_change(doc)
+
+
+def check_approval_event_trigger(doc, event):
+    """
+    Check if there are approval templates triggered by this event
+
+    Args:
+        doc: The document
+        event: Event name (After Insert, On Update, On Submit, On Cancel)
+    """
+    # Skip system doctypes
+    if doc.doctype in SYSTEM_DOCTYPES:
+        return
+
+    # Delegate to approval handler
+    from whatsapp_notifications.whatsapp_notifications.approval import handle_document_event
+    handle_document_event(doc, event)

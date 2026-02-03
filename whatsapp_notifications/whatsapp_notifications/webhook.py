@@ -251,13 +251,23 @@ def process_potential_approval_response(sender_phone, message_text, settings):
     approval_request = find_pending_approval_for_phone(formatted_phone, sender_phone)
 
     if not approval_request:
+        # Check if there's a recently processed request (duplicate response)
+        recent_request = find_recent_processed_approval_for_phone(formatted_phone, sender_phone)
+        if recent_request:
+            # User already responded - send a polite message
+            send_already_processed_message(recent_request, settings)
+            return {"processed": False, "reason": "Already processed", "duplicate": True}
+
         return {"processed": False, "reason": "No pending approval for this phone"}
 
     # Parse the response to get option number
     option_number = parse_response_option(message_text)
 
+    # Get the template
+    template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
+
     if option_number is None:
-        # Invalid response - could send a help message
+        # Invalid response - send help message using template's custom message
         if settings.get("enable_debug_logging"):
             frappe.log_error(
                 "Invalid response '{}' for approval {}".format(
@@ -266,18 +276,17 @@ def process_potential_approval_response(sender_phone, message_text, settings):
                 "WhatsApp Approval Invalid Response"
             )
 
-        # Send help message
-        send_invalid_response_message(approval_request, message_text, settings)
+        # Send help message (uses template's custom message if configured)
+        send_invalid_response_message(approval_request, template, message_text, settings)
 
         return {"processed": False, "reason": "Invalid option number"}
 
     # Validate option number exists in template
-    template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
     option = template.get_option_by_number(option_number)
 
     if not option:
         # Option number not valid for this template
-        send_invalid_response_message(approval_request, message_text, settings)
+        send_invalid_response_message(approval_request, template, message_text, settings)
         return {"processed": False, "reason": "Option {} not valid for this approval".format(option_number)}
 
     # Process the approval
@@ -287,6 +296,11 @@ def process_potential_approval_response(sender_phone, message_text, settings):
         response_text=message_text,
         response_from=sender_phone
     )
+
+    # Check if it was already processed (duplicate response handling)
+    if result.get("already_processed"):
+        send_already_processed_message(approval_request, settings)
+        return {"processed": False, "reason": "Already processed", "duplicate": True}
 
     frappe.db.commit()
 
@@ -380,29 +394,112 @@ def parse_response_option(message_text):
     return None
 
 
-def send_invalid_response_message(approval_request, received_text, settings):
+def find_recent_processed_approval_for_phone(formatted_phone, original_phone):
+    """
+    Find a recently processed approval request for a phone number
+    (to detect duplicate responses)
+
+    Args:
+        formatted_phone: Formatted phone number
+        original_phone: Original phone number from webhook
+
+    Returns:
+        WhatsApp Approval Request or None
+    """
+    from frappe.utils import add_to_date, now_datetime
+
+    # Look for approvals processed in the last hour
+    cutoff_time = add_to_date(now_datetime(), hours=-1)
+
+    requests = frappe.get_all(
+        "WhatsApp Approval Request",
+        filters={
+            "status": ["in", ["Approved", "Rejected"]],
+            "formatted_phone": formatted_phone,
+            "responded_at": [">=", cutoff_time]
+        },
+        order_by="responded_at desc",
+        limit=1
+    )
+
+    if requests:
+        return frappe.get_doc("WhatsApp Approval Request", requests[0].name)
+
+    # Try with original phone
+    if original_phone != formatted_phone:
+        requests = frappe.get_all(
+            "WhatsApp Approval Request",
+            filters={
+                "status": ["in", ["Approved", "Rejected"]],
+                "formatted_phone": original_phone,
+                "responded_at": [">=", cutoff_time]
+            },
+            order_by="responded_at desc",
+            limit=1
+        )
+
+        if requests:
+            return frappe.get_doc("WhatsApp Approval Request", requests[0].name)
+
+    return None
+
+
+def send_already_processed_message(approval_request, settings):
+    """
+    Send a message when user tries to respond to already processed approval
+
+    Args:
+        approval_request: WhatsApp Approval Request
+        settings: Evolution API settings
+    """
+    from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_notification
+
+    try:
+        message = _("This approval request has already been processed.\n\nStatus: {0}").format(
+            approval_request.status
+        )
+
+        if approval_request.responded_at:
+            message += "\n" + _("Processed at: {0}").format(
+                frappe.utils.format_datetime(approval_request.responded_at)
+            )
+
+        send_whatsapp_notification(
+            phone=approval_request.recipient_phone,
+            message=message,
+            reference_doctype="WhatsApp Approval Request",
+            reference_name=approval_request.name,
+            notification_rule=None,
+            recipient_name=approval_request.recipient_name
+        )
+
+    except Exception as e:
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Error sending already processed message: {}".format(str(e)),
+                "WhatsApp Webhook Error"
+            )
+
+
+def send_invalid_response_message(approval_request, template, received_text, settings):
     """
     Send a message explaining the valid options when invalid response received
 
     Args:
         approval_request: WhatsApp Approval Request
+        template: WhatsApp Approval Template
         received_text: The invalid text received
         settings: Evolution API settings
     """
     from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_notification
 
     try:
-        template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
+        # Use template's custom invalid response message if configured
+        message = template.render_invalid_response_message(received_text)
 
-        # Build help message
-        message = _("Sorry, I didn't understand your response: '{0}'").format(received_text[:50])
-        message += "\n\n"
-        message += _("Please respond with one of these options:") + "\n"
-
-        for option in sorted(template.response_options, key=lambda x: x.option_number):
-            message += "{} - {}\n".format(option.option_number, option.option_label)
-
-        message += "\n" + _("Reply with just the number.")
+        if not message:
+            # Template doesn't want to send invalid response messages
+            return
 
         send_whatsapp_notification(
             phone=approval_request.recipient_phone,

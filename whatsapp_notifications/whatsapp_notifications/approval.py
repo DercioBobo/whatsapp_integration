@@ -7,7 +7,7 @@ from frappe import _
 from frappe.utils import now_datetime
 
 
-def send_approval_request(doctype, docname, template_name, phone=None):
+def send_approval_request(doctype, docname, template_name, phone=None, enqueue=True):
     """
     Send an approval request via WhatsApp
 
@@ -15,10 +15,46 @@ def send_approval_request(doctype, docname, template_name, phone=None):
         doctype: Document type
         docname: Document name
         template_name: WhatsApp Approval Template name
-        phone: Override phone number (optional, uses template's phone_field if not provided)
+        phone: Override phone number (optional, uses template's recipients if not provided)
+        enqueue: If True, send via background job for faster response
 
     Returns:
         dict: Result with success status and approval request name
+    """
+    if enqueue:
+        # Queue for background processing
+        frappe.enqueue(
+            "whatsapp_notifications.whatsapp_notifications.approval._send_approval_request_background",
+            queue="short",
+            doctype=doctype,
+            docname=docname,
+            template_name=template_name,
+            phone=phone
+        )
+        return {"success": True, "message": _("Approval request queued for sending")}
+
+    return _send_approval_request_impl(doctype, docname, template_name, phone)
+
+
+def _send_approval_request_background(doctype, docname, template_name, phone=None):
+    """Background job wrapper for send_approval_request"""
+    try:
+        result = _send_approval_request_impl(doctype, docname, template_name, phone)
+        if not result.get("success"):
+            frappe.log_error(
+                "Background approval request failed: {}".format(result.get("error")),
+                "WhatsApp Approval Background Error"
+            )
+    except Exception as e:
+        frappe.log_error(
+            "Background approval request error: {}".format(str(e)),
+            "WhatsApp Approval Background Error"
+        )
+
+
+def _send_approval_request_impl(doctype, docname, template_name, phone=None):
+    """
+    Internal implementation of send_approval_request
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
@@ -38,17 +74,19 @@ def send_approval_request(doctype, docname, template_name, phone=None):
         # Get document
         doc = frappe.get_doc(doctype, docname)
 
-        # Get phone number
-        if not phone:
-            phone = get_phone_from_document(doc, template.phone_field)
+        # Check condition if set
+        if not template.check_condition(doc):
+            return {"success": False, "error": _("Condition not met for this document")}
 
-        if not phone:
-            return {"success": False, "error": _("Could not determine recipient phone number")}
+        # Get recipients
+        if phone:
+            # Override with provided phone
+            recipients = [phone]
+        else:
+            recipients = template.get_recipients(doc)
 
-        # Format phone number
-        formatted_phone = format_phone_number(phone)
-        if not formatted_phone:
-            return {"success": False, "error": _("Invalid phone number: {0}").format(phone)}
+        if not recipients:
+            return {"success": False, "error": _("Could not determine recipient phone numbers")}
 
         # Cancel previous pending requests if not allowed
         if not template.allow_multiple_pending:
@@ -58,53 +96,68 @@ def send_approval_request(doctype, docname, template_name, phone=None):
         # Render message
         message = template.render_message(doc)
 
-        # Create approval request record
-        approval_request = frappe.get_doc({
-            "doctype": "WhatsApp Approval Request",
-            "status": "Pending",
-            "approval_template": template_name,
-            "reference_doctype": doctype,
-            "reference_name": docname,
-            "recipient_phone": phone,
-            "formatted_phone": formatted_phone,
-            "recipient_name": get_recipient_name_from_document(doc)
-        })
-        approval_request.insert(ignore_permissions=True)
-
-        # Send WhatsApp message
-        result = send_whatsapp_notification(
-            phone=phone,
-            message=message,
-            reference_doctype="WhatsApp Approval Request",
-            reference_name=approval_request.name,
-            notification_rule=None,
-            recipient_name=approval_request.recipient_name
-        )
-
-        if result.get("success") or result.get("queued"):
-            # Update approval request with message log reference
-            if result.get("log"):
-                approval_request.db_set("message_log", result.get("log"))
-
-            frappe.db.commit()
-
-            if settings.get("enable_debug_logging"):
+        # Create approval requests for all recipients
+        approval_requests = []
+        for recipient_phone in recipients:
+            # Format phone number
+            formatted_phone = format_phone_number(recipient_phone)
+            if not formatted_phone:
                 frappe.log_error(
-                    "Approval request sent: {} for {} {}".format(
-                        approval_request.name, doctype, docname
-                    ),
-                    "WhatsApp Approval Debug"
+                    "Invalid phone number skipped: {}".format(recipient_phone),
+                    "WhatsApp Approval Warning"
                 )
+                continue
 
-            return {
-                "success": True,
-                "approval_request": approval_request.name,
-                "message_log": result.get("log")
-            }
-        else:
-            # Failed to send
-            approval_request.mark_error(result.get("error", "Failed to send message"))
-            return {"success": False, "error": result.get("error")}
+            # Create approval request record
+            approval_request = frappe.get_doc({
+                "doctype": "WhatsApp Approval Request",
+                "status": "Pending",
+                "approval_template": template_name,
+                "reference_doctype": doctype,
+                "reference_name": docname,
+                "recipient_phone": recipient_phone,
+                "formatted_phone": formatted_phone,
+                "recipient_name": get_recipient_name_from_document(doc)
+            })
+            approval_request.insert(ignore_permissions=True)
+            approval_requests.append(approval_request)
+
+            # Send WhatsApp message
+            result = send_whatsapp_notification(
+                phone=recipient_phone,
+                message=message,
+                reference_doctype="WhatsApp Approval Request",
+                reference_name=approval_request.name,
+                notification_rule=None,
+                recipient_name=approval_request.recipient_name
+            )
+
+            if result.get("success") or result.get("queued"):
+                # Update approval request with message log reference
+                if result.get("log"):
+                    approval_request.db_set("message_log", result.get("log"))
+            else:
+                # Failed to send
+                approval_request.mark_error(result.get("error", "Failed to send message"))
+
+        frappe.db.commit()
+
+        if not approval_requests:
+            return {"success": False, "error": _("No valid recipients found")}
+
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Approval requests sent: {} for {} {} to {} recipients".format(
+                    [ar.name for ar in approval_requests], doctype, docname, len(approval_requests)
+                ),
+                "WhatsApp Approval Debug"
+            )
+
+        return {
+            "success": True,
+            "approval_requests": [ar.name for ar in approval_requests],
+            "recipients": len(approval_requests)
+        }
 
     except Exception as e:
         frappe.log_error(
@@ -134,11 +187,12 @@ def process_approval_response(approval_request_name, option_number, response_tex
 
         approval_request = frappe.get_doc("WhatsApp Approval Request", approval_request_name)
 
-        # Validate status
+        # Check if already processed (duplicate response)
         if approval_request.status != "Pending":
             return {
                 "success": False,
-                "error": _("This approval request is no longer pending (status: {0})").format(
+                "already_processed": True,
+                "error": _("This approval request has already been processed (status: {0})").format(
                     approval_request.status
                 )
             }
@@ -188,6 +242,15 @@ def process_approval_response(approval_request_name, option_number, response_tex
             new_status = determine_status_from_option(option.option_label)
             approval_request.mark_processed(action_result.get("description"), new_status)
 
+            # If first_response_wins, cancel other pending requests for same document
+            if template.first_response_wins:
+                cancel_other_pending_requests(
+                    approval_request.reference_doctype,
+                    approval_request.reference_name,
+                    approval_request.name,
+                    "Approval already processed by another recipient"
+                )
+
             # Send confirmation if enabled
             if template.send_confirmation:
                 send_confirmation_message(
@@ -219,6 +282,37 @@ def process_approval_response(approval_request_name, option_number, response_tex
             "WhatsApp Approval Error"
         )
         return {"success": False, "error": str(e)}
+
+
+def cancel_other_pending_requests(doctype, docname, except_request_name, reason):
+    """
+    Cancel all other pending requests for a document except the one specified
+
+    Args:
+        doctype: Document type
+        docname: Document name
+        except_request_name: Request name to exclude
+        reason: Cancellation reason
+    """
+    requests = frappe.get_all(
+        "WhatsApp Approval Request",
+        filters={
+            "status": "Pending",
+            "reference_doctype": doctype,
+            "reference_name": docname,
+            "name": ["!=", except_request_name]
+        }
+    )
+
+    for req in requests:
+        frappe.db.set_value(
+            "WhatsApp Approval Request",
+            req.name,
+            {
+                "status": "Cancelled",
+                "error_message": reason
+            }
+        )
 
 
 def execute_action(doc, option):
@@ -409,41 +503,6 @@ def send_confirmation_message(template, doc, approval_request, option_label, act
         )
 
 
-def get_phone_from_document(doc, phone_field):
-    """
-    Get phone number from document using field path
-
-    Args:
-        doc: Document
-        phone_field: Field path (can use dot notation for linked docs)
-
-    Returns:
-        str: Phone number or None
-    """
-    if not phone_field:
-        return None
-
-    try:
-        # Handle dot notation (e.g., "customer.mobile_no")
-        if "." in phone_field:
-            parts = phone_field.split(".")
-            value = doc
-            for part in parts:
-                if hasattr(value, part):
-                    value = getattr(value, part)
-                elif isinstance(value, str):
-                    # It's a link field, get the linked document
-                    linked_doctype = frappe.get_meta(doc.doctype).get_field(parts[0]).options
-                    value = frappe.db.get_value(linked_doctype, value, part)
-                else:
-                    return None
-            return value
-        else:
-            return getattr(doc, phone_field, None)
-    except Exception:
-        return None
-
-
 def get_recipient_name_from_document(doc):
     """
     Try to get a recipient name from the document
@@ -552,6 +611,15 @@ def handle_workflow_state_change(doc, method=None):
         if not template:
             return
 
+        # Check condition
+        if not template.check_condition(doc):
+            if settings.get("enable_debug_logging"):
+                frappe.log_error(
+                    "Approval condition not met for {} {}".format(doc.doctype, doc.name),
+                    "WhatsApp Approval Condition"
+                )
+            return
+
         if settings.get("enable_debug_logging"):
             frappe.log_error(
                 "Workflow state change detected: {} {} -> {}".format(
@@ -560,25 +628,77 @@ def handle_workflow_state_change(doc, method=None):
                 "WhatsApp Approval Trigger"
             )
 
-        # Send approval request
-        result = send_approval_request(
+        # Send approval request (enqueued for faster response)
+        send_approval_request(
             doctype=doc.doctype,
             docname=doc.name,
-            template_name=template.name
+            template_name=template.name,
+            enqueue=True
         )
-
-        if not result.get("success"):
-            frappe.log_error(
-                "Failed to send automatic approval for {} {}: {}".format(
-                    doc.doctype, doc.name, result.get("error")
-                ),
-                "WhatsApp Approval Auto-Trigger Error"
-            )
 
     except Exception as e:
         frappe.log_error(
             "Error in workflow state change handler for {} {}: {}".format(
                 doc.doctype, doc.name, str(e)
+            ),
+            "WhatsApp Approval Handler Error"
+        )
+
+
+def handle_document_event(doc, event):
+    """
+    Handle document events to trigger automatic approvals
+
+    Args:
+        doc: Document
+        event: Event name (After Insert, On Update, On Submit, On Cancel)
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_approval_template.whatsapp_approval_template import get_templates_for_event
+
+    try:
+        settings = get_settings()
+        if not settings.get("enabled"):
+            return
+
+        # Get matching templates for this event
+        templates = get_templates_for_event(doc.doctype, event)
+
+        if not templates:
+            return
+
+        for template in templates:
+            # Check condition
+            if not template.check_condition(doc):
+                if settings.get("enable_debug_logging"):
+                    frappe.log_error(
+                        "Approval condition not met for template {} on {} {}".format(
+                            template.name, doc.doctype, doc.name
+                        ),
+                        "WhatsApp Approval Condition"
+                    )
+                continue
+
+            if settings.get("enable_debug_logging"):
+                frappe.log_error(
+                    "Event trigger: {} on {} {} - template {}".format(
+                        event, doc.doctype, doc.name, template.name
+                    ),
+                    "WhatsApp Approval Trigger"
+                )
+
+            # Send approval request (enqueued for faster response)
+            send_approval_request(
+                doctype=doc.doctype,
+                docname=doc.name,
+                template_name=template.name,
+                enqueue=True
+            )
+
+    except Exception as e:
+        frappe.log_error(
+            "Error in document event handler for {} {} ({}): {}".format(
+                doc.doctype, doc.name, event, str(e)
             ),
             "WhatsApp Approval Handler Error"
         )

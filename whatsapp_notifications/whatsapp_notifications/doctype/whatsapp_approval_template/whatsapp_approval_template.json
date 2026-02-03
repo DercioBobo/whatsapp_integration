@@ -10,20 +10,32 @@
         "template_name",
         "section_trigger",
         "document_type",
-        "workflow_state",
+        "event",
         "column_break_trigger",
+        "workflow_state",
+        "condition",
+        "section_recipients",
+        "recipient_type",
         "phone_field",
+        "column_break_recipients",
+        "fixed_recipients",
+        "first_response_wins",
         "section_message",
         "message_template",
         "section_options",
         "response_options",
+        "options_header_text",
+        "options_footer_text",
         "section_expiry",
         "expiry_hours",
         "column_break_expiry",
         "allow_multiple_pending",
         "section_confirmation",
         "send_confirmation",
-        "confirmation_template"
+        "confirmation_template",
+        "section_invalid_response",
+        "send_invalid_response_help",
+        "invalid_response_template"
     ],
     "fields": [
         {
@@ -56,20 +68,68 @@
             "description": "DocType that this approval template applies to"
         },
         {
-            "fieldname": "workflow_state",
-            "fieldtype": "Data",
-            "label": "Trigger on Workflow State",
-            "description": "Automatically send approval request when document enters this workflow state (leave empty for manual trigger only)"
+            "fieldname": "event",
+            "fieldtype": "Select",
+            "label": "Trigger Event",
+            "options": "\nAfter Insert\nOn Update\nOn Submit\nOn Cancel\nWorkflow State Change",
+            "description": "When to automatically send approval request. Leave empty for manual trigger only."
         },
         {
             "fieldname": "column_break_trigger",
             "fieldtype": "Column Break"
         },
         {
+            "fieldname": "workflow_state",
+            "fieldtype": "Data",
+            "label": "Workflow State",
+            "depends_on": "eval:doc.event=='Workflow State Change'",
+            "mandatory_depends_on": "eval:doc.event=='Workflow State Change'",
+            "description": "Send approval when document enters this workflow state"
+        },
+        {
+            "fieldname": "condition",
+            "fieldtype": "Code",
+            "label": "Condition (Optional)",
+            "options": "Jinja",
+            "description": "Jinja2 condition. Send only if evaluates to True. Example: {{ doc.grand_total > 10000 }}"
+        },
+        {
+            "fieldname": "section_recipients",
+            "fieldtype": "Section Break",
+            "label": "Recipients"
+        },
+        {
+            "fieldname": "recipient_type",
+            "fieldtype": "Select",
+            "label": "Recipient Type",
+            "options": "Field Value\nFixed Numbers\nBoth",
+            "default": "Field Value",
+            "description": "Who receives the approval request"
+        },
+        {
             "fieldname": "phone_field",
             "fieldtype": "Data",
             "label": "Phone Field",
-            "description": "Document field containing approver's phone number (e.g., custom_approver_phone, owner_phone). Can use dot notation for linked docs (e.g., owner.mobile_no)"
+            "depends_on": "eval:doc.recipient_type=='Field Value' || doc.recipient_type=='Both'",
+            "description": "Document field containing approver's phone number. Can use dot notation (e.g., customer.mobile_no)"
+        },
+        {
+            "fieldname": "column_break_recipients",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "fixed_recipients",
+            "fieldtype": "Small Text",
+            "label": "Fixed Recipients",
+            "depends_on": "eval:doc.recipient_type=='Fixed Numbers' || doc.recipient_type=='Both'",
+            "description": "Phone numbers to receive approval (one per line or comma-separated)"
+        },
+        {
+            "fieldname": "first_response_wins",
+            "fieldtype": "Check",
+            "label": "First Response Wins",
+            "default": "1",
+            "description": "When multiple recipients: first valid response is accepted, others are ignored. If unchecked, all must respond."
         },
         {
             "fieldname": "section_message",
@@ -96,6 +156,20 @@
             "options": "WhatsApp Approval Option",
             "reqd": 1,
             "description": "Define the numbered options the user can reply with"
+        },
+        {
+            "fieldname": "options_header_text",
+            "fieldtype": "Data",
+            "label": "Options Header Text",
+            "default": "Please respond with:",
+            "description": "Text shown before the options list"
+        },
+        {
+            "fieldname": "options_footer_text",
+            "fieldtype": "Data",
+            "label": "Options Footer Text",
+            "default": "Reply with the number of your choice.",
+            "description": "Text shown after the options list"
         },
         {
             "fieldname": "section_expiry",
@@ -140,6 +214,27 @@
             "options": "Jinja",
             "depends_on": "send_confirmation",
             "description": "Jinja2 template for confirmation message. Available variables: {{ doc }}, {{ option_label }}, {{ action_result }}"
+        },
+        {
+            "fieldname": "section_invalid_response",
+            "fieldtype": "Section Break",
+            "label": "Invalid Response Handling",
+            "collapsible": 1
+        },
+        {
+            "default": "1",
+            "fieldname": "send_invalid_response_help",
+            "fieldtype": "Check",
+            "label": "Send Help on Invalid Response",
+            "description": "Send a help message when user replies with invalid text"
+        },
+        {
+            "fieldname": "invalid_response_template",
+            "fieldtype": "Code",
+            "label": "Invalid Response Template",
+            "options": "Jinja",
+            "depends_on": "send_invalid_response_help",
+            "description": "Custom message for invalid responses. Available: {{ received_text }}, {{ options }}. Leave empty for default."
         }
     ],
     "index_web_pages_for_search": 1,
