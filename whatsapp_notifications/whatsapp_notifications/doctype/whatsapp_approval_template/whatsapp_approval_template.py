@@ -292,21 +292,25 @@ def get_template_for_workflow_state(doctype, workflow_state):
     Returns:
         WhatsApp Approval Template or None
     """
-    templates = frappe.get_all(
-        "WhatsApp Approval Template",
-        filters={
-            "enabled": 1,
-            "document_type": doctype,
-            "event": "Workflow State Change",
-            "workflow_state": workflow_state
-        },
-        limit=1
-    )
+    try:
+        templates = frappe.get_all(
+            "WhatsApp Approval Template",
+            filters={
+                "enabled": 1,
+                "document_type": doctype,
+                "event": "Workflow State Change",
+                "workflow_state": workflow_state
+            },
+            limit=1
+        )
 
-    if templates:
-        return frappe.get_doc("WhatsApp Approval Template", templates[0].name)
+        if templates:
+            return frappe.get_doc("WhatsApp Approval Template", templates[0].name)
 
-    return None
+        return None
+    except Exception:
+        # Column might not exist during migration
+        return None
 
 
 def get_templates_for_event(doctype, event):
@@ -320,13 +324,17 @@ def get_templates_for_event(doctype, event):
     Returns:
         list: List of WhatsApp Approval Template documents
     """
-    templates = frappe.get_all(
-        "WhatsApp Approval Template",
-        filters={
-            "enabled": 1,
-            "document_type": doctype,
-            "event": event
-        }
-    )
+    try:
+        templates = frappe.get_all(
+            "WhatsApp Approval Template",
+            filters={
+                "enabled": 1,
+                "document_type": doctype,
+                "event": event
+            }
+        )
 
-    return [frappe.get_doc("WhatsApp Approval Template", t.name) for t in templates]
+        return [frappe.get_doc("WhatsApp Approval Template", t.name) for t in templates]
+    except Exception:
+        # Column might not exist during migration
+        return []

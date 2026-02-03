@@ -593,10 +593,10 @@ def handle_workflow_state_change(doc, method=None):
         doc: Document that changed
         method: Event method name
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_approval_template.whatsapp_approval_template import get_template_for_workflow_state
-
     try:
+        from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_approval_template.whatsapp_approval_template import get_template_for_workflow_state
+
         settings = get_settings()
         if not settings.get("enabled"):
             return
@@ -636,13 +636,9 @@ def handle_workflow_state_change(doc, method=None):
             enqueue=True
         )
 
-    except Exception as e:
-        frappe.log_error(
-            "Error in workflow state change handler for {} {}: {}".format(
-                doc.doctype, doc.name, str(e)
-            ),
-            "WhatsApp Approval Handler Error"
-        )
+    except Exception:
+        # Fail silently - table might not exist during migration
+        pass
 
 
 def handle_document_event(doc, event):
@@ -653,10 +649,10 @@ def handle_document_event(doc, event):
         doc: Document
         event: Event name (After Insert, On Update, On Submit, On Cancel)
     """
-    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_approval_template.whatsapp_approval_template import get_templates_for_event
-
     try:
+        from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_approval_template.whatsapp_approval_template import get_templates_for_event
+
         settings = get_settings()
         if not settings.get("enabled"):
             return
@@ -695,10 +691,6 @@ def handle_document_event(doc, event):
                 enqueue=True
             )
 
-    except Exception as e:
-        frappe.log_error(
-            "Error in document event handler for {} {} ({}): {}".format(
-                doc.doctype, doc.name, event, str(e)
-            ),
-            "WhatsApp Approval Handler Error"
-        )
+    except Exception:
+        # Fail silently - table might not exist during migration
+        pass

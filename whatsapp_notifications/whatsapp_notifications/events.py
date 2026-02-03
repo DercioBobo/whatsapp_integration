@@ -697,9 +697,13 @@ def check_workflow_state_for_approval(doc):
     if not doc.has_value_changed("workflow_state"):
         return
 
-    # Delegate to approval handler
-    from whatsapp_notifications.whatsapp_notifications.approval import handle_workflow_state_change
-    handle_workflow_state_change(doc)
+    try:
+        # Delegate to approval handler
+        from whatsapp_notifications.whatsapp_notifications.approval import handle_workflow_state_change
+        handle_workflow_state_change(doc)
+    except Exception:
+        # Fail silently - table might not exist during migration
+        pass
 
 
 def check_approval_event_trigger(doc, event):
@@ -714,6 +718,10 @@ def check_approval_event_trigger(doc, event):
     if doc.doctype in SYSTEM_DOCTYPES:
         return
 
-    # Delegate to approval handler
-    from whatsapp_notifications.whatsapp_notifications.approval import handle_document_event
-    handle_document_event(doc, event)
+    try:
+        # Delegate to approval handler
+        from whatsapp_notifications.whatsapp_notifications.approval import handle_document_event
+        handle_document_event(doc, event)
+    except Exception:
+        # Fail silently - table might not exist during migration
+        pass
