@@ -325,16 +325,58 @@ def get_templates_for_event(doctype, event):
         list: List of WhatsApp Approval Template documents
     """
     try:
+        # Check if table exists and has the event column
+        if not frappe.db.table_exists("WhatsApp Approval Template"):
+            return []
+
+        # Get settings for debug logging
+        from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+        settings = get_settings()
+
+        # Query for matching templates
+        filters = {
+            "enabled": 1,
+            "document_type": doctype,
+            "event": event
+        }
+
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "get_templates_for_event query - doctype: '{}', event: '{}'".format(doctype, event),
+                "WhatsApp Approval Query Debug"
+            )
+
         templates = frappe.get_all(
             "WhatsApp Approval Template",
-            filters={
-                "enabled": 1,
-                "document_type": doctype,
-                "event": event
-            }
+            filters=filters
         )
 
+        if settings.get("enable_debug_logging"):
+            # Also query to see what templates exist for this doctype regardless of event
+            all_templates = frappe.get_all(
+                "WhatsApp Approval Template",
+                filters={"enabled": 1, "document_type": doctype},
+                fields=["name", "event"]
+            )
+            frappe.log_error(
+                "Templates found for {}: {} | All templates for this doctype: {}".format(
+                    event, [t.name for t in templates],
+                    [(t.name, t.event) for t in all_templates]
+                ),
+                "WhatsApp Approval Query Result"
+            )
+
         return [frappe.get_doc("WhatsApp Approval Template", t.name) for t in templates]
-    except Exception:
-        # Column might not exist during migration
+    except Exception as e:
+        # Log the error for debugging if debug mode is on
+        from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+        try:
+            settings = get_settings()
+            if settings.get("enable_debug_logging"):
+                frappe.log_error(
+                    "get_templates_for_event error for {} {}: {}".format(doctype, event, str(e)),
+                    "WhatsApp Approval Debug"
+                )
+        except Exception:
+            pass
         return []

@@ -722,6 +722,17 @@ def check_approval_event_trigger(doc, event):
         # Delegate to approval handler
         from whatsapp_notifications.whatsapp_notifications.approval import handle_document_event
         handle_document_event(doc, event)
-    except Exception:
-        # Fail silently - table might not exist during migration
-        pass
+    except Exception as e:
+        # Log error if debug enabled, otherwise fail silently (table might not exist during migration)
+        try:
+            from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+            settings = get_settings()
+            if settings.get("enable_debug_logging"):
+                frappe.log_error(
+                    "check_approval_event_trigger error for {} {} ({}): {}".format(
+                        doc.doctype, doc.name, event, str(e)
+                    ),
+                    "WhatsApp Approval Event Trigger Error"
+                )
+        except Exception:
+            pass

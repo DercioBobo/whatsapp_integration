@@ -565,41 +565,49 @@ frappe.whatsapp._approval_templates_loading = {};
 
 /**
  * Load approval templates for a doctype
+ * @param {string} doctype - Document type
+ * @param {function} callback - Callback with templates list
+ * @param {boolean} manual_only - If true, only return templates with manual trigger enabled
  */
-frappe.whatsapp.load_approval_templates = function(doctype, callback) {
+frappe.whatsapp.load_approval_templates = function(doctype, callback, manual_only) {
     if (!doctype) {
         // Just initialize the cache
         if (callback) callback([]);
         return;
     }
 
-    if (frappe.whatsapp._approval_templates_cache[doctype]) {
-        if (callback) callback(frappe.whatsapp._approval_templates_cache[doctype]);
+    var cache_key = doctype + (manual_only ? '_manual' : '');
+
+    if (frappe.whatsapp._approval_templates_cache[cache_key]) {
+        if (callback) callback(frappe.whatsapp._approval_templates_cache[cache_key]);
         return;
     }
 
-    if (frappe.whatsapp._approval_templates_loading[doctype]) {
+    if (frappe.whatsapp._approval_templates_loading[cache_key]) {
         // Wait and retry
         setTimeout(function() {
-            frappe.whatsapp.load_approval_templates(doctype, callback);
+            frappe.whatsapp.load_approval_templates(doctype, callback, manual_only);
         }, 100);
         return;
     }
 
-    frappe.whatsapp._approval_templates_loading[doctype] = true;
+    frappe.whatsapp._approval_templates_loading[cache_key] = true;
 
     frappe.call({
         method: 'whatsapp_notifications.whatsapp_notifications.api.get_approval_templates',
-        args: { doctype: doctype },
+        args: {
+            doctype: doctype,
+            manual_only: manual_only ? 1 : 0
+        },
         async: true,
         callback: function(r) {
-            frappe.whatsapp._approval_templates_loading[doctype] = false;
+            frappe.whatsapp._approval_templates_loading[cache_key] = false;
             if (r.message && r.message.success) {
-                frappe.whatsapp._approval_templates_cache[doctype] = r.message.templates || [];
+                frappe.whatsapp._approval_templates_cache[cache_key] = r.message.templates || [];
             } else {
-                frappe.whatsapp._approval_templates_cache[doctype] = [];
+                frappe.whatsapp._approval_templates_cache[cache_key] = [];
             }
-            if (callback) callback(frappe.whatsapp._approval_templates_cache[doctype]);
+            if (callback) callback(frappe.whatsapp._approval_templates_cache[cache_key]);
         }
     });
 };
@@ -776,12 +784,13 @@ frappe.whatsapp.cancel_approval = function(approval_request_name, callback) {
 };
 
 /**
- * Add approval button to form if templates exist for this doctype
+ * Add approval button to form if templates exist for this doctype (with manual trigger enabled)
  * @param {object} frm - Frappe form object
  */
 frappe.whatsapp.maybe_add_approval_button = function(frm) {
     if (frm.is_new()) return;
 
+    // Only load templates that have manual trigger enabled
     frappe.whatsapp.load_approval_templates(frm.doctype, function(templates) {
         if (templates && templates.length > 0) {
             // Remove existing button if any (to avoid duplicates)
@@ -798,7 +807,7 @@ frappe.whatsapp.maybe_add_approval_button = function(frm) {
                 });
             }, __('WhatsApp'));
         }
-    });
+    }, true);  // manual_only = true
 };
 
 // Hook into form refresh to add WhatsApp approval button

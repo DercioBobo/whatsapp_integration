@@ -996,12 +996,13 @@ def get_pending_approvals(doctype=None, docname=None):
 
 
 @frappe.whitelist()
-def get_approval_templates(doctype=None):
+def get_approval_templates(doctype=None, manual_only=False):
     """
     Get available approval templates
 
     Args:
         doctype: Filter by document type (optional)
+        manual_only: If True, only return templates with manual trigger enabled
 
     Returns:
         dict: List of approval templates
@@ -1012,10 +1013,13 @@ def get_approval_templates(doctype=None):
         if doctype:
             filters["document_type"] = doctype
 
+        if manual_only:
+            filters["enable_manual_trigger"] = 1
+
         templates = frappe.get_all(
             "WhatsApp Approval Template",
             filters=filters,
-            fields=["name", "template_name", "document_type", "workflow_state"],
+            fields=["name", "template_name", "document_type", "workflow_state", "enable_manual_trigger"],
             order_by="template_name"
         )
 

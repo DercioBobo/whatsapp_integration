@@ -657,8 +657,26 @@ def handle_document_event(doc, event):
         if not settings.get("enabled"):
             return
 
+        # Debug: log that we're checking for approval event triggers
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Checking approval event trigger: {} on {} {}".format(
+                    event, doc.doctype, doc.name
+                ),
+                "WhatsApp Approval Event Check"
+            )
+
         # Get matching templates for this event
         templates = get_templates_for_event(doc.doctype, event)
+
+        # Debug: log query results (always log to help diagnose issues)
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Found {} approval templates for {} event on {} (doc: {})".format(
+                    len(templates), event, doc.doctype, doc.name
+                ),
+                "WhatsApp Approval Event Result"
+            )
 
         if not templates:
             return
@@ -691,6 +709,17 @@ def handle_document_event(doc, event):
                 enqueue=True
             )
 
-    except Exception:
-        # Fail silently - table might not exist during migration
-        pass
+    except Exception as e:
+        # Log error if debug enabled, otherwise fail silently
+        try:
+            from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+            settings = get_settings()
+            if settings.get("enable_debug_logging"):
+                frappe.log_error(
+                    "handle_document_event error for {} {} ({}): {}".format(
+                        doc.doctype, doc.name, event, str(e)
+                    ),
+                    "WhatsApp Approval Event Error"
+                )
+        except Exception:
+            pass

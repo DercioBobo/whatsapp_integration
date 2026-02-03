@@ -8,6 +8,7 @@
     "field_order": [
         "enabled",
         "template_name",
+        "enable_manual_trigger",
         "section_trigger",
         "document_type",
         "event",
@@ -52,6 +53,13 @@
             "label": "Template Name",
             "reqd": 1,
             "unique": 1
+        },
+        {
+            "default": "1",
+            "fieldname": "enable_manual_trigger",
+            "fieldtype": "Check",
+            "label": "Show 'Send for Approval' Button",
+            "description": "Show the manual 'Send for Approval' button on document forms"
         },
         {
             "fieldname": "section_trigger",
