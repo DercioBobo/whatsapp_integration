@@ -329,42 +329,14 @@ def get_templates_for_event(doctype, event):
         if not frappe.db.table_exists("WhatsApp Approval Template"):
             return []
 
-        # Get settings for debug logging
-        from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
-        settings = get_settings()
-
-        # Query for matching templates
-        filters = {
-            "enabled": 1,
-            "document_type": doctype,
-            "event": event
-        }
-
-        if settings.get("enable_debug_logging"):
-            frappe.log_error(
-                message="Query: doctype='{}', event='{}'".format(doctype, event),
-                title="Approval Query"
-            )
-
         templates = frappe.get_all(
             "WhatsApp Approval Template",
-            filters=filters
+            filters={
+                "enabled": 1,
+                "document_type": doctype,
+                "event": event
+            }
         )
-
-        if settings.get("enable_debug_logging"):
-            # Also query to see what templates exist for this doctype regardless of event
-            all_templates = frappe.get_all(
-                "WhatsApp Approval Template",
-                filters={"enabled": 1, "document_type": doctype},
-                fields=["name", "event"]
-            )
-            frappe.log_error(
-                message="Event: {} | Found: {} | All for doctype: {}".format(
-                    event, [t.name for t in templates],
-                    [(t.name, t.event) for t in all_templates]
-                ),
-                title="Approval Query Result"
-            )
 
         return [frappe.get_doc("WhatsApp Approval Template", t.name) for t in templates]
     except Exception as e:
@@ -374,8 +346,8 @@ def get_templates_for_event(doctype, event):
             settings = get_settings()
             if settings.get("enable_debug_logging"):
                 frappe.log_error(
-                    "get_templates_for_event error for {} {}: {}".format(doctype, event, str(e)),
-                    "WhatsApp Approval Debug"
+                    message="Error: {}".format(str(e)),
+                    title="get_templates_for_event error"
                 )
         except Exception:
             pass

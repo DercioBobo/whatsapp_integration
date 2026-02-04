@@ -37,7 +37,11 @@
         "column_break_rate",
         "queue_enabled",
         "section_media",
-        "media_doctypes"
+        "media_doctypes",
+        "section_maintenance",
+        "clear_logs_html",
+        "clear_message_logs",
+        "clear_approval_requests"
     ],
     "fields": [
         {
@@ -244,6 +248,27 @@
             "label": "Enabled DocTypes",
             "options": "WhatsApp Media DocType",
             "description": "Add DocTypes that should have the WhatsApp media button"
+        },
+        {
+            "fieldname": "section_maintenance",
+            "fieldtype": "Section Break",
+            "label": "Maintenance",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "clear_logs_html",
+            "fieldtype": "HTML",
+            "options": "<p class='text-muted'>Use the buttons below to manage message logs and approval requests.</p>"
+        },
+        {
+            "fieldname": "clear_message_logs",
+            "fieldtype": "Button",
+            "label": "Clear All Message Logs"
+        },
+        {
+            "fieldname": "clear_approval_requests",
+            "fieldtype": "Button",
+            "label": "Clear All Approval Requests"
         }
     ],
     "index_web_pages_for_search": 0,

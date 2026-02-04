@@ -1082,3 +1082,92 @@ def get_all_media_doctypes():
     doctypes = [config.get("document_type") for config in media_doctypes if config.get("document_type")]
 
     return {"success": True, "doctypes": doctypes}
+
+
+@frappe.whitelist()
+def clear_all_message_logs():
+    """
+    Clear all WhatsApp Message Logs
+
+    Returns:
+        dict: Success status and count of deleted records
+    """
+    # Check permission
+    if not frappe.has_permission("Evolution API Settings", "write"):
+        return {"success": False, "error": "Permission denied"}
+
+    try:
+        # Get count before deletion
+        count = frappe.db.count("WhatsApp Message Log")
+
+        # Delete all records
+        frappe.db.delete("WhatsApp Message Log")
+        frappe.db.commit()
+
+        return {"success": True, "count": count}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def clear_all_approval_requests():
+    """
+    Clear all WhatsApp Approval Requests
+
+    Returns:
+        dict: Success status and count of deleted records
+    """
+    # Check permission
+    if not frappe.has_permission("Evolution API Settings", "write"):
+        return {"success": False, "error": "Permission denied"}
+
+    try:
+        # Get count before deletion
+        count = frappe.db.count("WhatsApp Approval Request")
+
+        # Delete all records
+        frappe.db.delete("WhatsApp Approval Request")
+        frappe.db.commit()
+
+        return {"success": True, "count": count}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def get_doctype_fields(doctype):
+    """
+    Get fields from a DocType for field selection
+
+    Args:
+        doctype: Document type name
+
+    Returns:
+        dict: List of fields with fieldname and label
+    """
+    try:
+        meta = frappe.get_meta(doctype)
+        fields = []
+
+        # Field types that can contain phone numbers or be used for updates
+        valid_fieldtypes = [
+            "Data", "Phone", "Small Text", "Text", "Long Text",
+            "Link", "Dynamic Link", "Select", "Int", "Float",
+            "Currency", "Check", "Date", "Datetime", "Time"
+        ]
+
+        for field in meta.fields:
+            if field.fieldtype in valid_fieldtypes and field.fieldname:
+                fields.append({
+                    "fieldname": field.fieldname,
+                    "label": field.label or field.fieldname,
+                    "fieldtype": field.fieldtype,
+                    "options": field.options
+                })
+
+        # Sort by label
+        fields.sort(key=lambda x: x.get("label", ""))
+
+        return {"success": True, "fields": fields}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

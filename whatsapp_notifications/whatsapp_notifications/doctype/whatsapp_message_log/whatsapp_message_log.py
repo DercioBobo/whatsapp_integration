@@ -232,7 +232,24 @@ def cleanup_old_logs(days=30):
     if old_logs:
         frappe.db.commit()
     
+    
+    if old_logs:
+        frappe.db.commit()
+    
     return len(old_logs)
+
+
+@frappe.whitelist()
+def clear_all_logs():
+    """
+    Clear all message logs
+    """
+    if not frappe.session.user == "Administrator" and "System Manager" not in frappe.get_roles():
+        frappe.throw(_("Not permitted"))
+        
+    frappe.db.sql("TRUNCATE `tabWhatsApp Message Log`")
+    return True
+
 
 
 @frappe.whitelist()

@@ -100,5 +100,59 @@ frappe.ui.form.on('Evolution API Settings', {
                 indicator: 'red'
             });
         }
+    },
+
+    clear_message_logs: function(frm) {
+        frappe.confirm(
+            __('This will permanently delete ALL WhatsApp Message Logs. This action cannot be undone. Are you sure?'),
+            function() {
+                frappe.call({
+                    method: 'whatsapp_notifications.whatsapp_notifications.api.clear_all_message_logs',
+                    freeze: true,
+                    freeze_message: __('Clearing message logs...'),
+                    callback: function(r) {
+                        if (r.message && r.message.success) {
+                            frappe.show_alert({
+                                message: __('Deleted {0} message logs', [r.message.count]),
+                                indicator: 'green'
+                            }, 5);
+                        } else {
+                            frappe.msgprint({
+                                title: __('Error'),
+                                indicator: 'red',
+                                message: r.message ? r.message.error : __('Failed to clear logs')
+                            });
+                        }
+                    }
+                });
+            }
+        );
+    },
+
+    clear_approval_requests: function(frm) {
+        frappe.confirm(
+            __('This will permanently delete ALL WhatsApp Approval Requests. This action cannot be undone. Are you sure?'),
+            function() {
+                frappe.call({
+                    method: 'whatsapp_notifications.whatsapp_notifications.api.clear_all_approval_requests',
+                    freeze: true,
+                    freeze_message: __('Clearing approval requests...'),
+                    callback: function(r) {
+                        if (r.message && r.message.success) {
+                            frappe.show_alert({
+                                message: __('Deleted {0} approval requests', [r.message.count]),
+                                indicator: 'green'
+                            }, 5);
+                        } else {
+                            frappe.msgprint({
+                                title: __('Error'),
+                                indicator: 'red',
+                                message: r.message ? r.message.error : __('Failed to clear requests')
+                            });
+                        }
+                    }
+                });
+            }
+        );
     }
 });

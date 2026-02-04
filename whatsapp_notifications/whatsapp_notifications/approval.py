@@ -657,24 +657,8 @@ def handle_document_event(doc, event):
         if not settings.get("enabled"):
             return
 
-        # Debug: log that we're checking for approval event triggers
-        if settings.get("enable_debug_logging"):
-            frappe.log_error(
-                message="Event: {} | DocType: {} | Doc: {}".format(event, doc.doctype, doc.name),
-                title="Approval Event Check"
-            )
-
         # Get matching templates for this event
         templates = get_templates_for_event(doc.doctype, event)
-
-        # Debug: log query results (always log to help diagnose issues)
-        if settings.get("enable_debug_logging"):
-            frappe.log_error(
-                message="Found {} templates for {} on {} ({})".format(
-                    len(templates), event, doc.doctype, doc.name
-                ),
-                title="Approval Event Result"
-            )
 
         if not templates:
             return

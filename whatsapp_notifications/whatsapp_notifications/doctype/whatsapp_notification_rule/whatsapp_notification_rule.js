@@ -2,18 +2,18 @@
 // Enhanced form with field suggestions, template preview, and testing
 
 frappe.ui.form.on('WhatsApp Notification Rule', {
-    refresh: function(frm) {
+    refresh: function (frm) {
         // Add preview button
         if (!frm.is_new() && frm.doc.document_type) {
-            frm.add_custom_button(__('Preview Message'), function() {
+            frm.add_custom_button(__('Preview Message'), function () {
                 show_preview_dialog(frm);
             }, __('Actions'));
 
-            frm.add_custom_button(__('Test Send'), function() {
+            frm.add_custom_button(__('Test Send'), function () {
                 show_test_dialog(frm);
             }, __('Actions'));
 
-            frm.add_custom_button(__('View Logs'), function() {
+            frm.add_custom_button(__('View Logs'), function () {
                 frappe.set_route('List', 'WhatsApp Message Log', {
                     notification_rule: frm.doc.name
                 });
@@ -28,25 +28,30 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         frm.toggle_display('group_id', needs_group);
         frm.toggle_display('group_name', needs_group && frm.doc.group_id);
         frm.toggle_display('select_group_button', needs_group);
+
+        // Setup field selectors on refresh
+        if (frm.doc.document_type) {
+            load_field_options(frm);
+        }
     },
-    
-    document_type: function(frm) {
+
+    document_type: function (frm) {
         // Clear field suggestions when doctype changes
         frm.set_value('phone_field', '');
         frm.set_value('value_changed', '');
-        
+
         if (frm.doc.document_type) {
             // Load field options
             load_field_options(frm);
         }
     },
-    
-    event: function(frm) {
+
+    event: function (frm) {
         // Show/hide value_changed field
         frm.toggle_reqd('value_changed', frm.doc.event === 'On Change');
     },
-    
-    recipient_type: function(frm) {
+
+    recipient_type: function (frm) {
         // Determine which fields to require based on recipient type
         let needs_phone_field = ['Field Value', 'Both', 'Phone and Group'].includes(frm.doc.recipient_type);
         let needs_fixed = ['Fixed Number', 'Both'].includes(frm.doc.recipient_type);
@@ -67,39 +72,45 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         }
     },
 
-    select_group_button: function(frm) {
+    select_group_button: function (frm) {
         show_group_selection_dialog(frm);
     }
 });
 
 function load_field_options(frm) {
     if (!frm.doc.document_type) return;
-    
+
     frappe.call({
-        method: 'whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule.get_doctype_fields',
+        method: 'whatsapp_notifications.whatsapp_notifications.api.get_doctype_fields',
         args: { doctype: frm.doc.document_type },
-        callback: function(r) {
-            if (r.message) {
-                // Store for autocomplete
-                frm.__field_options = r.message;
-                
-                // Update phone_field description with examples
-                let phone_fields = r.message.filter(f => 
-                    f.label.toLowerCase().includes('phone') || 
-                    f.label.toLowerCase().includes('mobile') ||
-                    f.value.includes('phone') ||
-                    f.value.includes('mobile')
-                );
-                
-                if (phone_fields.length > 0) {
-                    let suggestions = phone_fields.map(f => f.value).slice(0, 3).join(', ');
-                    frm.set_df_property('phone_field', 'description', 
-                        __('Suggested fields: ') + suggestions
-                    );
-                }
+        callback: function (r) {
+            if (r.message && r.message.success) {
+                var fields = r.message.fields;
+
+                // Populate Select options for phone_field
+                let phone_options = fields.map(f => ({
+                    label: `${f.label} (${f.fieldname})`,
+                    value: f.fieldname
+                }));
+
+                // Add empty option
+                phone_options.unshift({ label: '', value: '' });
+
+                set_field_options(frm, 'phone_field', phone_options);
+
+                // Populate Select options for value_changed
+                set_field_options(frm, 'value_changed', phone_options);
             }
         }
     });
+}
+
+function set_field_options(frm, fieldname, options) {
+    let field = frm.get_field(fieldname);
+    if (field) {
+        field.df.options = options;
+        field.refresh();
+    }
 }
 
 function setup_template_help(frm) {
@@ -139,14 +150,14 @@ function show_preview_dialog(frm) {
             limit_page_length: 10,
             order_by: 'creation desc'
         },
-        callback: function(r) {
+        callback: function (r) {
             if (!r.message || r.message.length === 0) {
                 frappe.msgprint(__('No documents found for preview'));
                 return;
             }
-            
+
             let options = r.message.map(d => d.name);
-            
+
             let dialog = new frappe.ui.Dialog({
                 title: __('Preview Message'),
                 fields: [
@@ -168,13 +179,13 @@ function show_preview_dialog(frm) {
                     }
                 ],
                 primary_action_label: __('Refresh Preview'),
-                primary_action: function(values) {
+                primary_action: function (values) {
                     render_preview(frm, values.docname, dialog);
                 }
             });
-            
+
             dialog.show();
-            
+
             // Initial preview
             render_preview(frm, options[0], dialog);
         }
@@ -188,7 +199,7 @@ function render_preview(frm, docname, dialog) {
             rule_name: frm.doc.name,
             docname: docname
         },
-        callback: function(r) {
+        callback: function (r) {
             if (r.message) {
                 let html = `
                     <div class="preview-container">
@@ -236,7 +247,7 @@ function show_test_dialog(frm) {
             }
         ],
         primary_action_label: __('Send Test'),
-        primary_action: function(values) {
+        primary_action: function (values) {
             // First preview the message
             frappe.call({
                 method: 'whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule.preview_message',
@@ -244,7 +255,7 @@ function show_test_dialog(frm) {
                     rule_name: frm.doc.name,
                     docname: values.test_docname
                 },
-                callback: function(r) {
+                callback: function (r) {
                     if (r.message && r.message.message) {
                         // Now send the test
                         frappe.call({
@@ -255,7 +266,7 @@ function show_test_dialog(frm) {
                                 doctype: frm.doc.document_type,
                                 docname: values.test_docname
                             },
-                            callback: function(send_r) {
+                            callback: function (send_r) {
                                 if (send_r.message && send_r.message.success) {
                                     dialog.hide();
                                     frappe.show_alert({
@@ -287,7 +298,7 @@ function show_group_selection_dialog(frm) {
         method: 'whatsapp_notifications.whatsapp_notifications.api.fetch_whatsapp_groups',
         freeze: true,
         freeze_message: __('Fetching WhatsApp groups...'),
-        callback: function(r) {
+        callback: function (r) {
             if (r.message && r.message.success) {
                 let groups = r.message.groups;
 
@@ -319,7 +330,7 @@ function show_group_selection_dialog(frm) {
                         }
                     ],
                     primary_action_label: __('Select'),
-                    primary_action: function(values) {
+                    primary_action: function (values) {
                         let selected = groups.find(g => g.id === values.group);
                         if (selected) {
                             frm.set_value('group_id', selected.id);

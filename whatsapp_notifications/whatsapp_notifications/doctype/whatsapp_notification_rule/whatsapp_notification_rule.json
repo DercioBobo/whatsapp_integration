@@ -92,7 +92,7 @@
         },
         {
             "fieldname": "value_changed",
-            "fieldtype": "Data",
+            "fieldtype": "Select",
             "label": "Value Changed (for On Change)",
             "description": "Field name to monitor for changes. Only used with 'On Change' event.",
             "depends_on": "eval:doc.event=='On Change'"
@@ -104,7 +104,7 @@
         },
         {
             "fieldname": "phone_field",
-            "fieldtype": "Data",
+            "fieldtype": "Select",
             "label": "Phone Field",
             "description": "Document field containing recipient phone number (e.g., mobile_no, phone, contact_mobile)"
         },
