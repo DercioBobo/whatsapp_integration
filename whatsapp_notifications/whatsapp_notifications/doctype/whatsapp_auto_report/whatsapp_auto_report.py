@@ -341,7 +341,8 @@ class WhatsAppAutoReport(Document):
 
         # Build report link if enabled
         if self.include_link:
-            filters_str = frappe.utils.urllib.parse.urlencode(self.get_filters())
+            from urllib.parse import urlencode
+            filters_str = urlencode(self.get_filters())
             context["link"] = "{}/app/query-report/{}?{}".format(
                 frappe.utils.get_url(),
                 self.report.replace(" ", "%20"),
