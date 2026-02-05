@@ -50,6 +50,7 @@ SYSTEM_DOCTYPES = (
     "WhatsApp Approval Request",
     "WhatsApp Approval Template",
     "WhatsApp Approval Option",
+    "WhatsApp Auto Report",
 )
 
 

@@ -136,6 +136,16 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
                 # Update approval request with message log reference
                 if result.get("log"):
                     approval_request.db_set("message_log", result.get("log"))
+
+                # Add timeline comment to the original document
+                from whatsapp_notifications.whatsapp_notifications.utils import add_approval_sent_comment
+                add_approval_sent_comment(
+                    doctype,
+                    docname,
+                    recipient_phone,
+                    template_name,
+                    approval_request.recipient_name
+                )
             else:
                 # Failed to send
                 approval_request.mark_error(result.get("error", "Failed to send message"))
@@ -241,6 +251,16 @@ def process_approval_response(approval_request_name, option_number, response_tex
             # Determine status based on option label
             new_status = determine_status_from_option(option.option_label)
             approval_request.mark_processed(action_result.get("description"), new_status)
+
+            # Add timeline comment to the original document
+            from whatsapp_notifications.whatsapp_notifications.utils import add_approval_response_comment
+            add_approval_response_comment(
+                approval_request.reference_doctype,
+                approval_request.reference_name,
+                response_from,
+                option.option_label,
+                new_status
+            )
 
             # If first_response_wins, cancel other pending requests for same document
             if template.first_response_wins:

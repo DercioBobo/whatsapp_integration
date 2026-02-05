@@ -1,0 +1,292 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "field:report_name",
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "enabled",
+        "report_name",
+        "section_report",
+        "report",
+        "report_type",
+        "column_break_report",
+        "user",
+        "filters",
+        "dynamic_filters",
+        "section_schedule",
+        "frequency",
+        "day_of_week",
+        "column_break_schedule",
+        "day_of_month",
+        "send_time",
+        "section_recipients",
+        "recipients",
+        "column_break_recipients",
+        "no_of_rows",
+        "send_if_data",
+        "section_format",
+        "format",
+        "include_pdf",
+        "include_excel",
+        "column_break_format",
+        "pdf_print_format",
+        "section_message",
+        "message_template",
+        "include_summary",
+        "include_link",
+        "section_status",
+        "last_sent",
+        "last_status",
+        "last_error"
+    ],
+    "fields": [
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled"
+        },
+        {
+            "fieldname": "report_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Name",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "section_report",
+            "fieldtype": "Section Break",
+            "label": "Report Configuration"
+        },
+        {
+            "fieldname": "report",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Report",
+            "options": "Report",
+            "reqd": 1
+        },
+        {
+            "fieldname": "report_type",
+            "fieldtype": "Select",
+            "label": "Report Type",
+            "options": "Report Builder\nQuery Report\nScript Report",
+            "read_only": 1,
+            "fetch_from": "report.report_type"
+        },
+        {
+            "fieldname": "column_break_report",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "user",
+            "fieldtype": "Link",
+            "label": "Run As User",
+            "options": "User",
+            "description": "Report will be generated with this user's permissions",
+            "default": "Administrator"
+        },
+        {
+            "fieldname": "filters",
+            "fieldtype": "Code",
+            "label": "Filters (JSON)",
+            "options": "JSON",
+            "description": "Report filters in JSON format. Example: {\"company\": \"My Company\"}"
+        },
+        {
+            "fieldname": "dynamic_filters",
+            "fieldtype": "Small Text",
+            "label": "Dynamic Date Filters",
+            "description": "Use: today, yesterday, this_week, last_week, this_month, last_month, this_quarter, last_quarter, this_year, last_year"
+        },
+        {
+            "fieldname": "section_schedule",
+            "fieldtype": "Section Break",
+            "label": "Schedule"
+        },
+        {
+            "fieldname": "frequency",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Frequency",
+            "options": "Daily\nWeekly\nMonthly\nQuarterly",
+            "default": "Daily",
+            "reqd": 1
+        },
+        {
+            "fieldname": "day_of_week",
+            "fieldtype": "Select",
+            "label": "Day of Week",
+            "options": "\nMonday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday",
+            "depends_on": "eval:doc.frequency=='Weekly'",
+            "mandatory_depends_on": "eval:doc.frequency=='Weekly'"
+        },
+        {
+            "fieldname": "column_break_schedule",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "day_of_month",
+            "fieldtype": "Int",
+            "label": "Day of Month",
+            "default": "1",
+            "description": "1-28 (use 1 for first day, 28 for safety on all months)",
+            "depends_on": "eval:doc.frequency=='Monthly' || doc.frequency=='Quarterly'",
+            "mandatory_depends_on": "eval:doc.frequency=='Monthly' || doc.frequency=='Quarterly'"
+        },
+        {
+            "fieldname": "send_time",
+            "fieldtype": "Time",
+            "label": "Send Time",
+            "default": "08:00:00",
+            "reqd": 1,
+            "description": "Time to send the report (server timezone)"
+        },
+        {
+            "fieldname": "section_recipients",
+            "fieldtype": "Section Break",
+            "label": "Recipients"
+        },
+        {
+            "fieldname": "recipients",
+            "fieldtype": "Small Text",
+            "label": "Recipients",
+            "reqd": 1,
+            "description": "WhatsApp phone numbers (one per line)"
+        },
+        {
+            "fieldname": "column_break_recipients",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "no_of_rows",
+            "fieldtype": "Int",
+            "label": "Max Rows",
+            "default": "500",
+            "description": "Maximum rows to include in report (0 = unlimited)"
+        },
+        {
+            "fieldname": "send_if_data",
+            "fieldtype": "Check",
+            "label": "Send Only If Data",
+            "default": "1",
+            "description": "Only send if the report returns data"
+        },
+        {
+            "fieldname": "section_format",
+            "fieldtype": "Section Break",
+            "label": "Format & Attachments"
+        },
+        {
+            "fieldname": "format",
+            "fieldtype": "Select",
+            "label": "Primary Format",
+            "options": "Text Summary\nPDF\nExcel",
+            "default": "Text Summary"
+        },
+        {
+            "fieldname": "include_pdf",
+            "fieldtype": "Check",
+            "label": "Include PDF Attachment",
+            "default": "0"
+        },
+        {
+            "fieldname": "include_excel",
+            "fieldtype": "Check",
+            "label": "Include Excel Attachment",
+            "default": "1"
+        },
+        {
+            "fieldname": "column_break_format",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "pdf_print_format",
+            "fieldtype": "Link",
+            "label": "PDF Print Format",
+            "options": "Print Format",
+            "depends_on": "include_pdf",
+            "description": "Optional custom print format for PDF"
+        },
+        {
+            "fieldname": "section_message",
+            "fieldtype": "Section Break",
+            "label": "Message"
+        },
+        {
+            "fieldname": "message_template",
+            "fieldtype": "Code",
+            "label": "Message Template",
+            "options": "Jinja",
+            "description": "Jinja2 template. Variables: {{ report_name }}, {{ date }}, {{ rows }}, {{ summary }}"
+        },
+        {
+            "fieldname": "include_summary",
+            "fieldtype": "Check",
+            "label": "Include Data Summary in Message",
+            "default": "1",
+            "description": "Include first few rows as text in the message"
+        },
+        {
+            "fieldname": "include_link",
+            "fieldtype": "Check",
+            "label": "Include Report Link",
+            "default": "0",
+            "description": "Include link to view report in ERPNext"
+        },
+        {
+            "fieldname": "section_status",
+            "fieldtype": "Section Break",
+            "label": "Status",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "last_sent",
+            "fieldtype": "Datetime",
+            "label": "Last Sent",
+            "read_only": 1
+        },
+        {
+            "fieldname": "last_status",
+            "fieldtype": "Data",
+            "label": "Last Status",
+            "read_only": 1
+        },
+        {
+            "fieldname": "last_error",
+            "fieldtype": "Small Text",
+            "label": "Last Error",
+            "read_only": 1
+        }
+    ],
+    "index_web_pages_for_search": 1,
+    "links": [],
+    "modified": "2024-01-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "WhatsApp Notifications",
+    "name": "WhatsApp Auto Report",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "quick_entry": 0,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "track_changes": 1
+}

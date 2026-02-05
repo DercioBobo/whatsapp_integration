@@ -4,7 +4,9 @@
       "WebFetch(domain:doc.evolution-api.com)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:docs.evolutionx.io)"
+      "WebFetch(domain:docs.evolutionx.io)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)"
     ]
   }
 }

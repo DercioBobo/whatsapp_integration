@@ -229,23 +229,164 @@ def format_mzn(amount, symbol="MZN"):
 def build_message_from_template(template, doc, extra_context=None):
     """
     Build a message from a Jinja2 template
-    
+
     Args:
         template: Jinja2 template string
         doc: Document to use as context
         extra_context: Additional context variables
-    
+
     Returns:
         str: Rendered message
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
-    
+
     context = get_template_context(doc)
-    
+
     if extra_context:
         context.update(extra_context)
-    
+
     return frappe.render_template(template, context)
+
+
+# ============================================================
+# Timeline Comment Helpers
+# ============================================================
+
+def add_whatsapp_comment(doctype, docname, comment_text, comment_type="Info"):
+    """
+    Add a comment to the document timeline for WhatsApp activity
+
+    Args:
+        doctype: Document type
+        docname: Document name
+        comment_text: Comment content (HTML supported)
+        comment_type: Comment type (Info, Comment, etc.)
+    """
+    try:
+        # Skip if doctype is a WhatsApp internal doctype
+        if doctype in ("WhatsApp Message Log", "WhatsApp Approval Request",
+                       "WhatsApp Approval Template", "Evolution API Settings"):
+            return
+
+        frappe.get_doc({
+            "doctype": "Comment",
+            "comment_type": comment_type,
+            "reference_doctype": doctype,
+            "reference_name": docname,
+            "content": comment_text
+        }).insert(ignore_permissions=True)
+
+    except Exception:
+        # Don't let comment errors break the main flow
+        pass
+
+
+def format_phone_for_display(phone):
+    """
+    Format phone number for display in comments
+
+    Args:
+        phone: Phone number
+
+    Returns:
+        str: Formatted phone (e.g., "+258 841234567")
+    """
+    if not phone:
+        return "desconhecido"
+
+    phone = str(phone).strip()
+
+    # Clean the phone number
+    clean = re.sub(r'[^\d]', '', phone)
+
+    if not clean:
+        return phone
+
+    # Format with country code prefix
+    if len(clean) > 9:
+        return "+{}".format(clean)
+    else:
+        return clean
+
+
+def add_notification_sent_comment(doctype, docname, phone, recipient_name=None):
+    """
+    Add timeline comment for notification sent
+
+    Args:
+        doctype: Document type
+        docname: Document name
+        phone: Recipient phone number
+        recipient_name: Recipient name (optional)
+    """
+    formatted_phone = format_phone_for_display(phone)
+
+    if recipient_name:
+        comment = "📱 <strong>WhatsApp:</strong> Notificação enviada para {} ({})".format(
+            recipient_name, formatted_phone
+        )
+    else:
+        comment = "📱 <strong>WhatsApp:</strong> Notificação enviada para {}".format(
+            formatted_phone
+        )
+
+    add_whatsapp_comment(doctype, docname, comment)
+
+
+def add_approval_sent_comment(doctype, docname, phone, template_name, recipient_name=None):
+    """
+    Add timeline comment for approval request sent
+
+    Args:
+        doctype: Document type
+        docname: Document name
+        phone: Recipient phone number
+        template_name: Approval template name
+        recipient_name: Recipient name (optional)
+    """
+    formatted_phone = format_phone_for_display(phone)
+
+    if recipient_name:
+        comment = "📱 <strong>WhatsApp:</strong> Pedido de aprovação enviado para {} ({}) - Template: {}".format(
+            recipient_name, formatted_phone, template_name
+        )
+    else:
+        comment = "📱 <strong>WhatsApp:</strong> Pedido de aprovação enviado para {} - Template: {}".format(
+            formatted_phone, template_name
+        )
+
+    add_whatsapp_comment(doctype, docname, comment)
+
+
+def add_approval_response_comment(doctype, docname, phone, option_label, status):
+    """
+    Add timeline comment for approval response received
+
+    Args:
+        doctype: Document type
+        docname: Document name
+        phone: Responder phone number
+        option_label: Selected option label
+        status: Resulting status (Approved/Rejected)
+    """
+    formatted_phone = format_phone_for_display(phone)
+
+    # Choose icon based on status
+    if status == "Approved":
+        icon = "✅"
+        status_text = "aprovado"
+    elif status == "Rejected":
+        icon = "❌"
+        status_text = "rejeitado"
+    else:
+        icon = "📱"
+        status_text = "respondido"
+
+    comment = "{} <strong>WhatsApp:</strong> Documento {} pelo número {} (Resposta: {})".format(
+        icon, status_text, formatted_phone, option_label
+    )
+
+    add_whatsapp_comment(doctype, docname, comment)
 
 
 def truncate_message(message, max_length=4096):

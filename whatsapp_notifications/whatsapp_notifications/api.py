@@ -272,13 +272,23 @@ def process_message_log(log_name):
                 response_id = response.get("key", {}).get("id") or response.get("messageId")
             
             log.mark_sent(response_data=response, response_id=response_id)
-            
+
+            # Add timeline comment to the referenced document
+            if log.reference_doctype and log.reference_name:
+                from whatsapp_notifications.whatsapp_notifications.utils import add_notification_sent_comment
+                add_notification_sent_comment(
+                    log.reference_doctype,
+                    log.reference_name,
+                    log.formatted_phone,
+                    log.recipient_name
+                )
+
             if settings.get("enable_debug_logging"):
                 frappe.log_error(
                     "WhatsApp Sent: {} to {}".format(log.name, log.formatted_phone),
                     "WhatsApp Debug"
                 )
-            
+
             return {"success": True, "log": log.name, "response_id": response_id}
             
         except Exception as e:
@@ -617,6 +627,16 @@ def process_media_message_log(log_name):
             frappe.db.set_value("WhatsApp Message Log", log_name, "_media_base64", None, update_modified=False)
             frappe.db.set_value("WhatsApp Message Log", log_name, "_media_mimetype", None, update_modified=False)
             frappe.db.commit()
+
+            # Add timeline comment to the referenced document
+            if log.reference_doctype and log.reference_name:
+                from whatsapp_notifications.whatsapp_notifications.utils import add_notification_sent_comment
+                add_notification_sent_comment(
+                    log.reference_doctype,
+                    log.reference_name,
+                    log.formatted_phone,
+                    log.recipient_name
+                )
 
             if settings.get("enable_debug_logging"):
                 frappe.log_error(

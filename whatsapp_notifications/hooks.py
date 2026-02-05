@@ -125,6 +125,10 @@ scheduler_events = {
         "*/5 * * * *": [
             "whatsapp_notifications.whatsapp_notifications.tasks.retry_failed_messages"
         ],
+        # Check auto reports every 15 minutes
+        "*/15 * * * *": [
+            "whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_auto_report.whatsapp_auto_report.process_auto_reports"
+        ],
         # Cleanup old logs daily at 2 AM
         "0 2 * * *": [
             "whatsapp_notifications.whatsapp_notifications.tasks.cleanup_old_logs"
@@ -136,7 +140,8 @@ scheduler_events = {
     ],
     "hourly": [
         "whatsapp_notifications.whatsapp_notifications.tasks.retry_failed_messages",
-        "whatsapp_notifications.whatsapp_notifications.approval.expire_old_requests"
+        "whatsapp_notifications.whatsapp_notifications.approval.expire_old_requests",
+        "whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_auto_report.whatsapp_auto_report.process_auto_reports"
     ],
     "daily": [
         "whatsapp_notifications.whatsapp_notifications.tasks.cleanup_old_logs"
