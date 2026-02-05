@@ -153,6 +153,7 @@ class WhatsAppAutoReport(Document):
 
         return getdate(self.last_sent) == getdate(today())
 
+    @frappe.whitelist()
     def generate_and_send(self):
         """Generate report and send via WhatsApp"""
         from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_message_with_media
