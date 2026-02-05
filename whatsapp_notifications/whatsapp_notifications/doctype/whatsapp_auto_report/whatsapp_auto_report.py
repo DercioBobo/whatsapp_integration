@@ -156,8 +156,6 @@ class WhatsAppAutoReport(Document):
     @frappe.whitelist()
     def generate_and_send(self):
         """Generate report and send via WhatsApp"""
-        from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_message_with_media
-
         try:
             # Generate report data
             report_data = self.get_report_data()
