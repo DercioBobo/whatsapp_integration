@@ -14,14 +14,23 @@
         "column_break_trigger",
         "condition",
         "value_changed",
+        "days_offset",
+        "date_field",
         "section_recipient",
-        "phone_field",
         "recipient_type",
+        "use_child_table",
+        "phone_field",
+        "child_table",
+        "child_phone_field",
         "column_break_recipient",
         "fixed_recipients",
         "group_id",
         "group_name",
         "select_group_button",
+        "section_row_conditions",
+        "only_changed_rows",
+        "child_watch_fields",
+        "row_condition",
         "section_message",
         "message_type",
         "print_format",
@@ -75,7 +84,7 @@
             "fieldtype": "Select",
             "in_list_view": 1,
             "label": "Event",
-            "options": "After Insert\nOn Update\nOn Submit\nOn Cancel\nOn Change\nOn Trash",
+            "options": "After Insert\nOn Update\nOn Submit\nOn Cancel\nOn Change\nOn Trash\nDays Before\nDays After",
             "reqd": 1,
             "default": "After Insert"
         },
@@ -92,10 +101,26 @@
         },
         {
             "fieldname": "value_changed",
-            "fieldtype": "Select",
+            "fieldtype": "Data",
             "label": "Value Changed (for On Change)",
-            "description": "Field name to monitor for changes. Only used with 'On Change' event.",
+            "description": "Comma-separated field names to monitor for changes. Only used with 'On Change' event.",
             "depends_on": "eval:doc.event=='On Change'"
+        },
+        {
+            "fieldname": "days_offset",
+            "fieldtype": "Int",
+            "label": "Days Offset",
+            "description": "Number of days before or after the date field to trigger",
+            "depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'",
+            "mandatory_depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'"
+        },
+        {
+            "fieldname": "date_field",
+            "fieldtype": "Select",
+            "label": "Date Field",
+            "description": "Date or Datetime field to use for Days Before/After scheduling",
+            "depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'",
+            "mandatory_depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'"
         },
         {
             "fieldname": "section_recipient",
@@ -103,18 +128,41 @@
             "label": "Recipient Configuration"
         },
         {
-            "fieldname": "phone_field",
-            "fieldtype": "Select",
-            "label": "Phone Field",
-            "description": "Document field containing recipient phone number (e.g., mobile_no, phone, contact_mobile)"
-        },
-        {
             "fieldname": "recipient_type",
             "fieldtype": "Select",
             "label": "Recipient Type",
-            "options": "Field Value\nFixed Number\nBoth\nGroup\nPhone and Group",
-            "default": "Field Value",
+            "options": "Document Contact\nFixed Numbers\nDocument + Fixed\nWhatsApp Group\nDocument + Group",
+            "default": "Document Contact",
             "description": "How to determine recipients"
+        },
+        {
+            "default": "0",
+            "fieldname": "use_child_table",
+            "fieldtype": "Check",
+            "label": "Use Child Table",
+            "description": "Get phone numbers from a child table field",
+            "depends_on": "eval:['Document Contact','Document + Fixed','Document + Group'].includes(doc.recipient_type)"
+        },
+        {
+            "fieldname": "phone_field",
+            "fieldtype": "Data",
+            "label": "Phone Field",
+            "description": "Comma-separated document field names containing recipient phone numbers",
+            "depends_on": "eval:['Document Contact','Document + Fixed','Document + Group'].includes(doc.recipient_type) && !doc.use_child_table"
+        },
+        {
+            "fieldname": "child_table",
+            "fieldtype": "Select",
+            "label": "Child Table",
+            "description": "Child table field to iterate for recipients",
+            "depends_on": "eval:doc.use_child_table==1"
+        },
+        {
+            "fieldname": "child_phone_field",
+            "fieldtype": "Data",
+            "label": "Child Phone Field",
+            "description": "Comma-separated field names in child table containing phone numbers",
+            "depends_on": "eval:doc.use_child_table==1 && doc.child_table"
         },
         {
             "fieldname": "column_break_recipient",
@@ -124,15 +172,15 @@
             "fieldname": "fixed_recipients",
             "fieldtype": "Small Text",
             "label": "Fixed Recipients",
-            "description": "Comma-separated phone numbers to always receive this notification",
-            "depends_on": "eval:doc.recipient_type=='Fixed Number' || doc.recipient_type=='Both'"
+            "description": "Phone numbers to always receive this notification (one per line or comma/semicolon separated)",
+            "depends_on": "eval:doc.recipient_type=='Fixed Numbers' || doc.recipient_type=='Document + Fixed'"
         },
         {
             "fieldname": "group_id",
             "fieldtype": "Data",
             "label": "WhatsApp Group ID",
             "description": "The WhatsApp group ID (ending with @g.us)",
-            "depends_on": "eval:doc.recipient_type=='Group' || doc.recipient_type=='Phone and Group'",
+            "depends_on": "eval:doc.recipient_type=='WhatsApp Group' || doc.recipient_type=='Document + Group'",
             "read_only": 1
         },
         {
@@ -146,7 +194,36 @@
             "fieldname": "select_group_button",
             "fieldtype": "Button",
             "label": "Select Group",
-            "depends_on": "eval:doc.recipient_type=='Group' || doc.recipient_type=='Phone and Group'"
+            "depends_on": "eval:doc.recipient_type=='WhatsApp Group' || doc.recipient_type=='Document + Group'"
+        },
+        {
+            "fieldname": "section_row_conditions",
+            "fieldtype": "Section Break",
+            "label": "Row Conditions",
+            "depends_on": "eval:doc.use_child_table==1 && doc.child_table"
+        },
+        {
+            "default": "0",
+            "fieldname": "only_changed_rows",
+            "fieldtype": "Check",
+            "label": "Only Changed Rows",
+            "description": "Only send for rows that have changed since last save",
+            "depends_on": "eval:doc.use_child_table==1 && (doc.event=='On Update' || doc.event=='On Change')"
+        },
+        {
+            "fieldname": "child_watch_fields",
+            "fieldtype": "Data",
+            "label": "Watch Fields (Child)",
+            "description": "Comma-separated child table fields to watch for changes. Empty = watch all fields.",
+            "depends_on": "eval:doc.use_child_table==1 && doc.only_changed_rows==1 && doc.child_table"
+        },
+        {
+            "fieldname": "row_condition",
+            "fieldtype": "Code",
+            "label": "Row Condition",
+            "description": "Jinja2 per-row filter. Use {{ row.fieldname }} to check row fields.",
+            "options": "Jinja",
+            "depends_on": "eval:doc.use_child_table==1 && doc.child_table"
         },
         {
             "fieldname": "section_message",
@@ -159,7 +236,7 @@
             "label": "Message Type",
             "options": "Text Only\nAttached File\nDocument PDF\nFixed File",
             "default": "Text Only",
-            "description": "Text Only: sends message template. Attached File: sends first attachment. Document PDF: generates PDF from print format. Fixed File: sends a specific file (catalog, price list, etc.)"
+            "description": "Text Only: sends message template. Attached File: sends first attachment. Document PDF: generates PDF from print format. Fixed File: sends a specific file."
         },
         {
             "fieldname": "print_format",
@@ -172,7 +249,7 @@
             "fieldname": "fixed_file",
             "fieldtype": "Attach",
             "label": "Fixed File",
-            "description": "Select or upload a file to always send with this rule (e.g., catalog, price list)",
+            "description": "Select or upload a file to always send with this rule",
             "depends_on": "eval:doc.message_type=='Fixed File'"
         },
         {
@@ -181,12 +258,12 @@
             "label": "Message Template",
             "reqd": 1,
             "options": "Jinja",
-            "description": "Jinja2 template for the message. Use {{ doc.fieldname }} to include document fields."
+            "description": "Jinja2 template for the message. Use {{ doc.fieldname }}, {{ row.fieldname }}, {{ changed_fields }}, {{ changed_values }}, {{ previous_values }}."
         },
         {
             "fieldname": "section_owner_notification",
             "fieldtype": "Section Break",
-            "label": "Default Notification Recipients",
+            "label": "CC Notification",
             "collapsible": 1
         },
         {
@@ -201,7 +278,7 @@
             "fieldtype": "Code",
             "label": "Message Template for Default Recipients",
             "options": "Jinja",
-            "description": "Separate template for owner notification. If empty, uses the same template.",
+            "description": "Separate template for default recipients notification. If empty, uses the same template.",
             "depends_on": "notify_owner"
         },
         {
@@ -223,7 +300,7 @@
             "fieldname": "delay_seconds",
             "fieldtype": "Int",
             "label": "Delay (seconds)",
-            "description": "Wait this many seconds before sending (useful for 'save and continue editing' scenarios)"
+            "description": "Wait this many seconds before sending"
         },
         {
             "fieldname": "column_break_advanced",
