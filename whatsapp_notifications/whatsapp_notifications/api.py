@@ -721,21 +721,8 @@ def get_document_pdf(doctype, docname, print_format=None):
 
     except Exception as e:
         error_msg = str(e)
-
-        # Check for wkhtmltopdf error
-        if "wkhtmltopdf" in error_msg.lower() or "No wkhtmltopdf" in error_msg:
-            user_friendly_error = _(
-                "PDF generation requires wkhtmltopdf to be installed on the server. "
-                "Please install it or use 'Attached File' option instead."
-            )
-            frappe.log_error(
-                message="wkhtmltopdf not found. Original error: {}".format(error_msg),
-                title="WhatsApp PDF Error - wkhtmltopdf Missing"
-            )
-            return {"success": False, "error": user_friendly_error}
-
         frappe.log_error(
-            message=error_msg,
+            message="PDF generation error for {} {}: {}".format(doctype, docname, error_msg),
             title="WhatsApp PDF Generation Error"
         )
         return {"success": False, "error": error_msg}

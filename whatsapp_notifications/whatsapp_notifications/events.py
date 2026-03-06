@@ -548,21 +548,12 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
                 media_type = "document"
             else:
                 error_msg = pdf_data.get("error", "Unknown error")
-                # Check if it's a wkhtmltopdf error
-                if "wkhtmltopdf" in error_msg.lower():
-                    frappe.log_error(
-                        "PDF generation failed - wkhtmltopdf not installed. "
-                        "Please install wkhtmltopdf on the server or use 'Attached File' option instead. "
-                        "Document: {} {}".format(reference_doctype, reference_name),
-                        "WhatsApp PDF Error - wkhtmltopdf Missing"
-                    )
-                else:
-                    frappe.log_error(
-                        "Could not generate PDF for {} {}: {}".format(
-                            reference_doctype, reference_name, error_msg
-                        ),
-                        "WhatsApp PDF Error"
-                    )
+                frappe.log_error(
+                    "Could not generate PDF for {} {}: {}".format(
+                        reference_doctype, reference_name, error_msg
+                    ),
+                    "WhatsApp PDF Error"
+                )
                 return
         else:
             # No media source specified
