@@ -108,6 +108,7 @@ doc_events = {
         "on_submit": "whatsapp_notifications.whatsapp_notifications.events.handle_on_submit",
         "on_cancel": "whatsapp_notifications.whatsapp_notifications.events.handle_on_cancel",
         "on_trash": "whatsapp_notifications.whatsapp_notifications.events.handle_on_trash",
+        "on_change": "whatsapp_notifications.whatsapp_notifications.events.handle_on_change",
         "on_update_after_submit": "whatsapp_notifications.whatsapp_notifications.approval.handle_workflow_state_change",
     }
 }

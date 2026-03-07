@@ -84,6 +84,11 @@ def handle_on_cancel(doc, method=None):
     check_approval_event_trigger(doc, "On Cancel")
 
 
+def handle_on_change(doc, method=None):
+    """Handle on_change event for all DocTypes"""
+    process_event(doc, "on_change")
+
+
 def handle_on_trash(doc, method=None):
     """Handle on_trash event for all DocTypes"""
     process_event(doc, "on_trash")
