@@ -97,7 +97,12 @@ class WhatsAppNotificationRule(Document):
 
     def validate_template(self):
         dummy_ctx = _make_dummy_render_context()
-        for label, template in [("message_template", self.message_template), ("owner_message_template", self.owner_message_template)]:
+        for label, template in [
+            ("message_template", self.message_template),
+            ("owner_message_template", self.owner_message_template),
+            ("previous_day_template", self.previous_day_template),
+            ("next_day_template", self.next_day_template),
+        ]:
             if not template:
                 continue
             try:
@@ -348,7 +353,13 @@ class WhatsAppNotificationRule(Document):
         return result
 
     def render_message(self, doc, for_owner=False, row=None, changed_fields=None, row_before=None):
-        template = self.owner_message_template if for_owner and self.owner_message_template else self.message_template
+        _override = getattr(self, '_template_override', None)
+        if _override and not for_owner:
+            template = _override
+        elif for_owner and self.owner_message_template:
+            template = self.owner_message_template
+        else:
+            template = self.message_template
 
         try:
             context = get_template_context(doc)

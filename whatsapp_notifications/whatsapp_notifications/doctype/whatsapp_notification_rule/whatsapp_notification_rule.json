@@ -35,7 +35,11 @@
         "message_type",
         "print_format",
         "fixed_file",
+        "send_previous_day",
+        "previous_day_template",
         "message_template",
+        "send_next_day",
+        "next_day_template",
         "section_owner_notification",
         "notify_owner",
         "owner_message_template",
@@ -253,12 +257,44 @@
             "depends_on": "eval:doc.message_type=='Fixed File'"
         },
         {
+            "default": "0",
+            "fieldname": "send_previous_day",
+            "fieldtype": "Check",
+            "label": "Also Send on Previous Day",
+            "description": "Send a separate message the day before the date field. Fires when date_field = tomorrow.",
+            "depends_on": "eval:doc.event=='On Same Day'"
+        },
+        {
+            "fieldname": "previous_day_template",
+            "fieldtype": "Code",
+            "label": "Previous Day Message Template",
+            "options": "Jinja",
+            "description": "Template for the previous-day message. Nothing is sent if left empty.",
+            "depends_on": "eval:doc.event=='On Same Day' && doc.send_previous_day"
+        },
+        {
             "fieldname": "message_template",
             "fieldtype": "Code",
             "label": "Message Template",
             "reqd": 1,
             "options": "Jinja",
             "description": "Jinja2 template for the message. Use {{ doc.fieldname }}, {{ row.fieldname }}, {{ changed_fields }}, {{ changed_values }}, {{ previous_values }}."
+        },
+        {
+            "default": "0",
+            "fieldname": "send_next_day",
+            "fieldtype": "Check",
+            "label": "Also Send on Next Day",
+            "description": "Send a separate message the day after the date field. Fires when date_field = yesterday.",
+            "depends_on": "eval:doc.event=='On Same Day'"
+        },
+        {
+            "fieldname": "next_day_template",
+            "fieldtype": "Code",
+            "label": "Next Day Message Template",
+            "options": "Jinja",
+            "description": "Template for the next-day message. Nothing is sent if left empty.",
+            "depends_on": "eval:doc.event=='On Same Day' && doc.send_next_day"
         },
         {
             "fieldname": "section_owner_notification",

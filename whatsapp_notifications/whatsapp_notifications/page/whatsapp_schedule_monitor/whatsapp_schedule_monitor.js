@@ -213,7 +213,9 @@ var WhatsAppScheduleMonitor = class WhatsAppScheduleMonitor {
                 ? `⏰ ${__('Fires at configured hour')} — ${__('sends when')} ${r.date_field} = today + ${r.days_offset}d`
                 : r.event === 'Days After'
                 ? `⏰ ${__('Fires at configured hour')} — ${__('sends when')} ${r.date_field} = today - ${r.days_offset}d`
-                : `⏰ ${__('Fires at configured hour')} — ${__('sends when')} ${r.date_field} = today`;
+                : `⏰ ${__('Fires at configured hour')} — ${__('sends when')} ${r.date_field} = today`
+                    + (r.send_previous_day ? ` · ${__('+ prev day')}` : '')
+                    + (r.send_next_day ? ` · ${__('+ next day')}` : '');
 
             return `
                 <tr>

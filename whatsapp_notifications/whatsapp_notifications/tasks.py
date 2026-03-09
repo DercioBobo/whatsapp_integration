@@ -319,60 +319,87 @@ def process_scheduled_rules():
                 # Calculate which document date value triggers today
                 # "Days Before N": send when date_field == today + N
                 # "Days After N":  send when date_field == today - N
-                # "On Same Day":   send when date_field == today
+                # "On Same Day":   send when date_field == today (plus optional prev/next day passes)
                 if rule.event == "On Same Day":
-                    target_doc_date = today
-                elif rule.event == "Days Before":
-                    if not rule.days_offset:
-                        continue
-                    target_doc_date = add_days(today, rule.days_offset)
+                    passes = [
+                        # (target_date, template_override_or_None)
+                        (today, None),  # main: same day
+                    ]
+                    if getattr(rule, 'send_previous_day', 0):
+                        prev_tpl = getattr(rule, 'previous_day_template', None)
+                        if prev_tpl:
+                            passes.insert(0, (add_days(today, 1), prev_tpl))
+                    if getattr(rule, 'send_next_day', 0):
+                        next_tpl = getattr(rule, 'next_day_template', None)
+                        if next_tpl:
+                            passes.append((add_days(today, -1), next_tpl))
                 else:
-                    if not rule.days_offset:
-                        continue
-                    target_doc_date = add_days(today, -rule.days_offset)
+                    if rule.event == "Days Before":
+                        if not rule.days_offset:
+                            continue
+                        target_doc_date = add_days(today, rule.days_offset)
+                    else:
+                        if not rule.days_offset:
+                            continue
+                        target_doc_date = add_days(today, -rule.days_offset)
+                    passes = [(target_doc_date, None)]
 
-                # Query documents whose date_field matches
+                # Query documents whose date_field matches and process each pass
                 try:
                     meta = frappe.get_meta(rule.document_type)
                     df = meta.get_field(rule.date_field)
                     if not df:
                         continue
-
-                    if df.fieldtype == "Datetime":
-                        # Match any time on that day
-                        docs = frappe.db.sql("""
-                            SELECT name FROM `tab{doctype}`
-                            WHERE DATE({field}) = %s
-                        """.format(
-                            doctype=rule.document_type,
-                            field=rule.date_field
-                        ), target_doc_date, as_dict=True)
-                        doc_names = [d.name for d in docs]
-                    else:
-                        doc_names = frappe.get_all(
-                            rule.document_type,
-                            filters={rule.date_field: target_doc_date},
-                            pluck="name"
-                        )
                 except Exception as e:
                     frappe.log_error(
-                        "Scheduled rule {}: error querying {}: {}".format(rule_name, rule.document_type, str(e)),
+                        "Scheduled rule {}: error reading meta {}: {}".format(rule_name, rule.document_type, str(e)),
                         "WhatsApp Scheduled Rule Error"
                     )
                     continue
 
-                for docname in doc_names:
+                for target_doc_date, template_override in passes:
                     try:
-                        doc = frappe.get_doc(rule.document_type, docname)
-                        process_rule(doc, rule, settings)
-                        total_processed += 1
+                        if df.fieldtype == "Datetime":
+                            docs = frappe.db.sql("""
+                                SELECT name FROM `tab{doctype}`
+                                WHERE DATE({field}) = %s
+                            """.format(
+                                doctype=rule.document_type,
+                                field=rule.date_field
+                            ), target_doc_date, as_dict=True)
+                            doc_names = [d.name for d in docs]
+                        else:
+                            doc_names = frappe.get_all(
+                                rule.document_type,
+                                filters={rule.date_field: target_doc_date},
+                                pluck="name"
+                            )
                     except Exception as e:
                         frappe.log_error(
-                            "Scheduled rule {} failed for {} {}: {}".format(
-                                rule_name, rule.document_type, docname, str(e)
+                            "Scheduled rule {}: error querying {} for {}: {}".format(
+                                rule_name, rule.document_type, target_doc_date, str(e)
                             ),
                             "WhatsApp Scheduled Rule Error"
                         )
+                        continue
+
+                    # Set template override on rule object (used by render_message)
+                    rule._template_override = template_override
+
+                    for docname in doc_names:
+                        try:
+                            doc = frappe.get_doc(rule.document_type, docname)
+                            process_rule(doc, rule, settings)
+                            total_processed += 1
+                        except Exception as e:
+                            frappe.log_error(
+                                "Scheduled rule {} failed for {} {}: {}".format(
+                                    rule_name, rule.document_type, docname, str(e)
+                                ),
+                                "WhatsApp Scheduled Rule Error"
+                            )
+
+                    rule._template_override = None
 
             except Exception as e:
                 frappe.log_error(
@@ -421,7 +448,8 @@ def get_schedule_monitor_data(from_date=None, to_date=None, rule_name=None):
         fields=["name", "rule_name", "document_type", "event", "date_field",
                 "days_offset", "recipient_type", "send_once", "enabled",
                 "phone_field", "fixed_recipients", "active_days",
-                "enable_active_hours", "active_hours_start", "active_hours_end"]
+                "enable_active_hours", "active_hours_start", "active_hours_end",
+                "send_previous_day", "send_next_day"]
     )
 
     entries = []
