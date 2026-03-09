@@ -60,6 +60,21 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         if (frm.doc.event === 'Days Before' || frm.doc.event === 'Days After') {
             load_date_fields(frm);
         }
+        // Refresh value_changed picker visibility when event changes
+        if (frm.doc.document_type) {
+            destroy_chip_picker(frm, 'value_changed');
+            if (frm.doc.event === 'On Change' || frm.doc.event === 'On Update') {
+                frappe.call({
+                    method: WNR_MODULE + '.get_doctype_watch_fields',
+                    args: { doctype: frm.doc.document_type },
+                    callback: function (r) {
+                        if (r.message) {
+                            setup_chip_picker(frm, 'value_changed', r.message, __('Add Watch Field'));
+                        }
+                    }
+                });
+            }
+        }
     },
 
     recipient_type: function (frm) {
@@ -178,16 +193,28 @@ function destroy_chip_picker(frm, fieldname) {
 
 function setup_doctype_pickers(frm) {
     if (!frm.doc.document_type) return;
+
     frappe.call({
         method: WNR_MODULE + '.get_doctype_fields',
         args: { doctype: frm.doc.document_type },
         callback: function (r) {
             if (r.message) {
                 setup_chip_picker(frm, 'phone_field', r.message, __('Add Phone Field'));
-                setup_chip_picker(frm, 'value_changed', r.message, __('Add Watch Field'));
             }
         }
     });
+
+    if (frm.doc.event === 'On Change' || frm.doc.event === 'On Update') {
+        frappe.call({
+            method: WNR_MODULE + '.get_doctype_watch_fields',
+            args: { doctype: frm.doc.document_type },
+            callback: function (r) {
+                if (r.message) {
+                    setup_chip_picker(frm, 'value_changed', r.message, __('Add Watch Field'));
+                }
+            }
+        });
+    }
 }
 
 function setup_child_pickers(frm) {

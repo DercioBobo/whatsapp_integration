@@ -124,6 +124,24 @@ class WhatsAppNotificationRule(Document):
             if _is_template_syntax_error(e):
                 frappe.throw(_("Invalid condition: {}").format(str(e)))
 
+    def _has_watched_field_changed(self, doc, watched_fields):
+        """
+        Check if any of the watched fields changed on the document.
+        Wraps has_value_changed in try/except so a missing or broken
+        implementation never silently blocks notifications.
+        """
+        for f in watched_fields:
+            try:
+                if doc.has_value_changed(f):
+                    return True
+            except AttributeError:
+                # has_value_changed not available (older Frappe) – assume changed
+                return True
+            except Exception:
+                # Any other error – assume changed so we don't silently drop
+                return True
+        return False
+
     def validate_time_settings(self):
         if not self.enable_active_hours:
             self.active_hours_start = None
@@ -187,9 +205,9 @@ class WhatsAppNotificationRule(Document):
                 )
                 return False
 
-        if self.event == "On Change" and self.value_changed:
+        if self.event in ("On Change", "On Update") and self.value_changed:
             watched = [f.strip() for f in self.value_changed.split(",") if f.strip()]
-            if watched and not any(doc.has_value_changed(f) for f in watched):
+            if watched and not self._has_watched_field_changed(doc, watched):
                 return False
 
         if not self.is_within_active_hours():
@@ -574,6 +592,37 @@ def get_doctype_fields(doctype):
                         })
             except Exception:
                 pass
+
+    return fields
+
+
+@frappe.whitelist()
+def get_doctype_watch_fields(doctype):
+    """Return all watchable fields for On Change / On Update value_changed picker.
+    Includes all scalar types (Data, Currency, Float, Int, Select, Date, etc.)
+    but excludes layout, Table, and Attach fields.
+    """
+    if not doctype:
+        return []
+
+    _excluded = frozenset({
+        "Section Break", "Column Break", "HTML", "Button", "Fold",
+        "Heading", "Tab Break", "Table", "Table MultiSelect",
+        "Attach", "Attach Image", "HTML Editor", "Text Editor",
+        "Geolocation", "Signature", "Barcode",
+    })
+
+    meta = frappe.get_meta(doctype)
+    fields = []
+    for df in meta.fields:
+        if df.fieldtype in _excluded:
+            continue
+        if df.fieldname in _METADATA_FIELDS:
+            continue
+        fields.append({
+            "value": df.fieldname,
+            "label": "{} ({})".format(df.label or df.fieldname, df.fieldtype)
+        })
 
     return fields
 

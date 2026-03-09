@@ -102,9 +102,9 @@
         {
             "fieldname": "value_changed",
             "fieldtype": "Data",
-            "label": "Value Changed (for On Change)",
-            "description": "Comma-separated field names to monitor for changes. Only used with 'On Change' event.",
-            "depends_on": "eval:doc.event=='On Change'"
+            "label": "Watch Fields (Parent)",
+            "description": "Comma-separated parent field names to monitor. Only fires when at least one of these fields changed. Leave empty to always fire.",
+            "depends_on": "eval:doc.event=='On Change' || doc.event=='On Update'"
         },
         {
             "fieldname": "days_offset",
