@@ -104,7 +104,13 @@ class WhatsAppNotificationRule(Document):
             except (frappe.exceptions.DoesNotExistError, frappe.exceptions.ValidationError):
                 pass
             except Exception as e:
-                frappe.throw(_("Invalid {}: {}").format(label, str(e)))
+                # Only reject genuine Jinja2 syntax errors, not runtime errors
+                # that occur because the dummy doc lacks real field values.
+                # Expressions like "{:,.2f}".format(doc.field) or
+                # frappe.utils.fmt_money(doc.field) are valid but may produce
+                # different exception types when run against a real document.
+                if _is_template_syntax_error(e):
+                    frappe.throw(_("Invalid {}: {}").format(label, str(e)))
 
     def validate_condition(self):
         if not self.condition:
@@ -115,7 +121,8 @@ class WhatsAppNotificationRule(Document):
         except (frappe.exceptions.DoesNotExistError, frappe.exceptions.ValidationError):
             pass
         except Exception as e:
-            frappe.throw(_("Invalid condition: {}").format(str(e)))
+            if _is_template_syntax_error(e):
+                frappe.throw(_("Invalid condition: {}").format(str(e)))
 
     def validate_time_settings(self):
         if not self.enable_active_hours:
@@ -340,9 +347,80 @@ class WhatsAppNotificationRule(Document):
             return None
 
 
+def _is_template_syntax_error(exc):
+    """
+    Returns True only if the exception is a genuine Jinja2 template syntax/parse error
+    (not a runtime error caused by the dummy validation context lacking real data).
+    """
+    try:
+        import jinja2
+        return isinstance(exc, (jinja2.TemplateSyntaxError, jinja2.UndefinedError))
+    except ImportError:
+        return False
+
+
+class _DummyValue:
+    """
+    A permissive dummy value for template validation.
+    Acts as 0 (numeric) and "" (string) so Jinja expressions like
+    "{:,.2f}".format(doc.field), doc.field | round(2), and
+    frappe.utils.fmt_money(doc.field) all pass validation without errors.
+    """
+    def __float__(self): return 0.0
+    def __int__(self): return 0
+    def __index__(self): return 0
+    def __str__(self): return ""
+    def __repr__(self): return ""
+    def __bool__(self): return False
+    def __format__(self, spec):
+        try:
+            return format(0.0, spec) if spec else ""
+        except Exception:
+            return ""
+    def __round__(self, n=0): return 0.0
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return _DummyValue()
+    def __call__(self, *args, **kwargs): return _DummyValue()
+    def __getitem__(self, key): return _DummyValue()
+    def __iter__(self): return iter([])
+    def __len__(self): return 0
+    def __add__(self, other): return 0.0
+    def __radd__(self, other): return 0.0
+    def __sub__(self, other): return 0.0
+    def __rsub__(self, other): return 0.0
+    def __mul__(self, other): return 0.0
+    def __rmul__(self, other): return 0.0
+    def __truediv__(self, other): return 0.0
+    def __rtruediv__(self, other): return 0.0
+    def __lt__(self, other): return True
+    def __le__(self, other): return True
+    def __gt__(self, other): return False
+    def __ge__(self, other): return False
+    def __eq__(self, other): return False
+
+
+class _DummyDoc:
+    """
+    A mock document for template validation that returns _DummyValue
+    for any attribute or key access, making format expressions safe to evaluate.
+    """
+    def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return _DummyValue()
+
+    def __getitem__(self, key):
+        return _DummyValue()
+
+    def get(self, key, default=None):
+        return _DummyValue()
+
+
 def _make_dummy_render_context():
-    doc = frappe._dict({"name": "TEST", "status": "Test"})
-    row = frappe._dict()
+    doc = _DummyDoc()
+    row = _DummyDoc()
     context = get_template_context(doc)
     context["row"] = row
     context["changed_fields"] = []
