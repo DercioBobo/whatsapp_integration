@@ -226,7 +226,7 @@ var WhatsAppScheduleMonitor = class WhatsAppScheduleMonitor {
                     </td>
                     <td>${frappe.utils.escape_html(r.document_type)}</td>
                     <td>${event_badge}</td>
-                    <td>${frappe.utils.escape_html(r.date_field)} ± ${r.days_offset}d</td>
+                    <td>${frappe.utils.escape_html(r.date_field)}${r.event !== 'On Same Day' ? ` ± ${r.days_offset}d` : ''}</td>
                     <td style="color:#6b7280;font-size:.82em;">${time_desc}</td>
                     <td style="color:#6b7280;font-size:.78em;">${sched_time}</td>
                     <td>
