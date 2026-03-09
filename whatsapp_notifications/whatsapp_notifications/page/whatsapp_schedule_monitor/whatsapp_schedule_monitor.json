@@ -1,0 +1,13 @@
+{
+    "creation": "2024-01-01 00:00:00.000000",
+    "doctype": "Page",
+    "icon": "fa fa-calendar-check-o",
+    "module": "WhatsApp Notifications",
+    "name": "whatsapp-schedule-monitor",
+    "page_name": "whatsapp-schedule-monitor",
+    "roles": [
+        {"role": "System Manager"}
+    ],
+    "standard": "Yes",
+    "title": "WhatsApp Schedule Monitor"
+}
