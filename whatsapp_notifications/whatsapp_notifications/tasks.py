@@ -4,7 +4,7 @@ Background processing for message queue and maintenance
 """
 import frappe
 from frappe import _
-from frappe.utils import now_datetime, add_to_date
+from frappe.utils import now_datetime, add_to_date, nowdate, add_days, getdate
 
 
 def process_pending_messages():
@@ -277,6 +277,274 @@ def cleanup_old_logs():
         )
 
 
+def process_scheduled_rules():
+    """
+    Process Days Before / Days After notification rules.
+    Runs daily to find documents whose date field matches the offset criteria
+    and sends notifications for rules that haven't fired yet.
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from whatsapp_notifications.whatsapp_notifications.events import process_rule
+
+    try:
+        settings = get_settings()
+        if not settings.get("enabled"):
+            return
+
+        today = nowdate()
+
+        rules = frappe.get_all(
+            "WhatsApp Notification Rule",
+            filters={"enabled": 1, "event": ["in", ["Days Before", "Days After"]]},
+            pluck="name"
+        )
+
+        if not rules:
+            return
+
+        total_processed = 0
+
+        for rule_name in rules:
+            try:
+                rule = frappe.get_doc("WhatsApp Notification Rule", rule_name)
+
+                if not rule.date_field or not rule.days_offset:
+                    continue
+
+                # Calculate which document date value triggers today
+                # "Days Before N": send when date_field == today + N
+                # "Days After N":  send when date_field == today - N
+                if rule.event == "Days Before":
+                    target_doc_date = add_days(today, rule.days_offset)
+                else:
+                    target_doc_date = add_days(today, -rule.days_offset)
+
+                # Query documents whose date_field matches
+                try:
+                    meta = frappe.get_meta(rule.document_type)
+                    df = meta.get_field(rule.date_field)
+                    if not df:
+                        continue
+
+                    if df.fieldtype == "Datetime":
+                        # Match any time on that day
+                        docs = frappe.db.sql("""
+                            SELECT name FROM `tab{doctype}`
+                            WHERE DATE({field}) = %s
+                        """.format(
+                            doctype=rule.document_type,
+                            field=rule.date_field
+                        ), target_doc_date, as_dict=True)
+                        doc_names = [d.name for d in docs]
+                    else:
+                        doc_names = frappe.get_all(
+                            rule.document_type,
+                            filters={rule.date_field: target_doc_date},
+                            pluck="name"
+                        )
+                except Exception as e:
+                    frappe.log_error(
+                        "Scheduled rule {}: error querying {}: {}".format(rule_name, rule.document_type, str(e)),
+                        "WhatsApp Scheduled Rule Error"
+                    )
+                    continue
+
+                for docname in doc_names:
+                    try:
+                        doc = frappe.get_doc(rule.document_type, docname)
+                        process_rule(doc, rule, settings)
+                        total_processed += 1
+                    except Exception as e:
+                        frappe.log_error(
+                            "Scheduled rule {} failed for {} {}: {}".format(
+                                rule_name, rule.document_type, docname, str(e)
+                            ),
+                            "WhatsApp Scheduled Rule Error"
+                        )
+
+            except Exception as e:
+                frappe.log_error(
+                    "Error loading scheduled rule {}: {}".format(rule_name, str(e)),
+                    "WhatsApp Scheduled Rule Error"
+                )
+
+        if settings.get("enable_debug_logging"):
+            frappe.log_error(
+                "Scheduled rules: processed {} documents for {}".format(total_processed, today),
+                "WhatsApp Debug"
+            )
+
+        frappe.db.commit()
+
+    except Exception as e:
+        frappe.log_error(
+            "WhatsApp Scheduled Rules Error: {}".format(str(e)),
+            "WhatsApp Scheduled Rules Error"
+        )
+
+
+# ============================================================
+# Schedule Monitor API
+# ============================================================
+
+@frappe.whitelist()
+def get_schedule_monitor_data(from_date=None, to_date=None, rule_name=None):
+    """
+    Returns scheduled rule data for the monitor page.
+    For each Days Before/Days After rule, computes which documents
+    will be (or have been) notified within the given date range.
+    """
+    if not from_date:
+        from_date = nowdate()
+    if not to_date:
+        to_date = add_days(nowdate(), 30)
+
+    filters = {"enabled": 1, "event": ["in", ["Days Before", "Days After"]]}
+    if rule_name:
+        filters["name"] = rule_name
+
+    rules = frappe.get_all(
+        "WhatsApp Notification Rule",
+        filters=filters,
+        fields=["name", "rule_name", "document_type", "event", "date_field",
+                "days_offset", "recipient_type", "send_once", "enabled",
+                "phone_field", "fixed_recipients", "active_days",
+                "enable_active_hours", "active_hours_start", "active_hours_end"]
+    )
+
+    entries = []
+    today = nowdate()
+
+    for rule in rules:
+        if not rule.get("date_field") or not rule.get("days_offset"):
+            continue
+        try:
+            meta = frappe.get_meta(rule.document_type)
+            df = meta.get_field(rule.date_field)
+            if not df:
+                continue
+
+            # Compute document date range that covers the requested notification window
+            # notification_date = doc_date - days_offset  (Days Before)
+            # notification_date = doc_date + days_offset  (Days After)
+            offset = int(rule.days_offset)
+            if rule.event == "Days Before":
+                doc_date_from = add_days(from_date, offset)
+                doc_date_to = add_days(to_date, offset)
+            else:
+                doc_date_from = add_days(from_date, -offset)
+                doc_date_to = add_days(to_date, -offset)
+
+            if df.fieldtype == "Datetime":
+                docs = frappe.db.sql("""
+                    SELECT name, {field} AS doc_date FROM `tab{doctype}`
+                    WHERE DATE({field}) BETWEEN %s AND %s
+                    ORDER BY {field} ASC
+                    LIMIT 200
+                """.format(doctype=rule.document_type, field=rule.date_field),
+                    (doc_date_from, doc_date_to), as_dict=True)
+            else:
+                docs = frappe.get_all(
+                    rule.document_type,
+                    filters={rule.date_field: ["between", [doc_date_from, doc_date_to]]},
+                    fields=["name", rule.date_field + " as doc_date"],
+                    order_by=rule.date_field + " asc",
+                    limit=200
+                )
+
+            # Pre-fetch all sent logs for this rule in the period (one query)
+            sent_logs = frappe.get_all(
+                "WhatsApp Message Log",
+                filters={
+                    "notification_rule": rule.name,
+                    "reference_doctype": rule.document_type,
+                },
+                fields=["reference_name", "status", "sent_at", "creation"],
+                order_by="creation desc"
+            )
+            sent_map = {}
+            for log in sent_logs:
+                if log.reference_name not in sent_map:
+                    sent_map[log.reference_name] = log
+
+            for doc in docs:
+                raw_date = doc.get("doc_date")
+                if not raw_date:
+                    continue
+                doc_date_str = str(raw_date)[:10]
+
+                if rule.event == "Days Before":
+                    notif_date = add_days(doc_date_str, -offset)
+                else:
+                    notif_date = add_days(doc_date_str, offset)
+
+                log = sent_map.get(doc.name)
+                if log:
+                    if log.status in ("Sent", "Delivered", "Read"):
+                        status = "Sent"
+                    elif log.status == "Failed":
+                        status = "Failed"
+                    elif log.status in ("Pending", "Queued", "Sending"):
+                        status = "Queued"
+                    else:
+                        status = log.status
+                elif notif_date == today:
+                    status = "Today"
+                elif notif_date < today:
+                    status = "Overdue"
+                else:
+                    status = "Upcoming"
+
+                entries.append({
+                    "rule": rule.name,
+                    "rule_label": rule.rule_name or rule.name,
+                    "document_type": rule.document_type,
+                    "document_name": doc.name,
+                    "event": rule.event,
+                    "days_offset": offset,
+                    "date_field": rule.date_field,
+                    "doc_date": doc_date_str,
+                    "notification_date": notif_date,
+                    "status": status,
+                    "sent_at": log.sent_at if log else None,
+                })
+
+        except Exception as e:
+            frappe.log_error(
+                "Schedule monitor error for rule {}: {}".format(rule.name, str(e)),
+                "WhatsApp Schedule Monitor"
+            )
+
+    entries.sort(key=lambda x: x["notification_date"])
+
+    # Summary counts
+    summary = {"total": len(entries), "today": 0, "upcoming": 0,
+               "sent": 0, "overdue": 0, "failed": 0, "queued": 0}
+    for e in entries:
+        s = e["status"]
+        if s == "Today":
+            summary["today"] += 1
+        elif s == "Upcoming":
+            summary["upcoming"] += 1
+        elif s == "Sent":
+            summary["sent"] += 1
+        elif s == "Overdue":
+            summary["overdue"] += 1
+        elif s == "Failed":
+            summary["failed"] += 1
+        elif s == "Queued":
+            summary["queued"] += 1
+
+    return {
+        "rules": rules,
+        "entries": entries,
+        "summary": summary,
+        "from_date": from_date,
+        "to_date": to_date,
+        "today": today,
+    }
+
+
 # ============================================================
 # Manual Trigger Functions
 # ============================================================
@@ -304,6 +572,19 @@ def trigger_retry_processing():
     frappe.enqueue(
         "whatsapp_notifications.whatsapp_notifications.tasks.retry_failed_messages",
         queue="short",
+        now=True
+    )
+    return {"status": "triggered"}
+
+
+@frappe.whitelist()
+def trigger_scheduled_rules():
+    """
+    Manually trigger processing of Days Before/After scheduled rules
+    """
+    frappe.enqueue(
+        "whatsapp_notifications.whatsapp_notifications.tasks.process_scheduled_rules",
+        queue="long",
         now=True
     )
     return {"status": "triggered"}
