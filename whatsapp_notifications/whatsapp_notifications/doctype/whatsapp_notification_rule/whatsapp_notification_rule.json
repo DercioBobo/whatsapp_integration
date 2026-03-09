@@ -84,7 +84,7 @@
             "fieldtype": "Select",
             "in_list_view": 1,
             "label": "Event",
-            "options": "After Insert\nOn Update\nOn Submit\nOn Cancel\nOn Change\nOn Trash\nDays Before\nDays After",
+            "options": "After Insert\nOn Update\nOn Submit\nOn Cancel\nOn Change\nOn Trash\nDays Before\nDays After\nOn Same Day",
             "reqd": 1,
             "default": "After Insert"
         },
@@ -110,7 +110,7 @@
             "fieldname": "days_offset",
             "fieldtype": "Int",
             "label": "Days Offset",
-            "description": "Number of days before or after the date field to trigger",
+            "description": "Number of days before or after the date field to trigger.",
             "depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'",
             "mandatory_depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'"
         },
@@ -118,9 +118,9 @@
             "fieldname": "date_field",
             "fieldtype": "Select",
             "label": "Date Field",
-            "description": "Date or Datetime field to use for Days Before/After scheduling",
-            "depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'",
-            "mandatory_depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After'"
+            "description": "Date or Datetime field to use for scheduling",
+            "depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After' || doc.event=='On Same Day'",
+            "mandatory_depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After' || doc.event=='On Same Day'"
         },
         {
             "fieldname": "section_recipient",

@@ -201,13 +201,19 @@ var WhatsAppScheduleMonitor = class WhatsAppScheduleMonitor {
         var rows = rules.map(r => {
             var event_badge = r.event === 'Days Before'
                 ? `<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-size:.75em;">${r.event}</span>`
-                : `<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:.75em;">${r.event}</span>`;
+                : r.event === 'Days After'
+                ? `<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:.75em;">${r.event}</span>`
+                : `<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:.75em;">${r.event}</span>`;
             var time_desc = r.event === 'Days Before'
                 ? __(`{0} days before {1}`, [r.days_offset, r.date_field])
-                : __(`{0} days after {1}`, [r.days_offset, r.date_field]);
+                : r.event === 'Days After'
+                ? __(`{0} days after {1}`, [r.days_offset, r.date_field])
+                : __(`on the same day as {0}`, [r.date_field]);
             var sched_time = r.event === 'Days Before'
-                ? `⏰ ${__('Fires daily at 7:00 AM')} — ${__('sends when')} ${r.date_field} = today + ${r.days_offset}d`
-                : `⏰ ${__('Fires daily at 7:00 AM')} — ${__('sends when')} ${r.date_field} = today - ${r.days_offset}d`;
+                ? `⏰ ${__('Fires at configured hour')} — ${__('sends when')} ${r.date_field} = today + ${r.days_offset}d`
+                : r.event === 'Days After'
+                ? `⏰ ${__('Fires at configured hour')} — ${__('sends when')} ${r.date_field} = today - ${r.days_offset}d`
+                : `⏰ ${__('Fires at configured hour')} — ${__('sends when')} ${r.date_field} = today`;
 
             return `
                 <tr>
@@ -318,7 +324,9 @@ var WhatsAppScheduleMonitor = class WhatsAppScheduleMonitor {
 
         var event_label = e.event === 'Days Before'
             ? `${e.days_offset}d ${__('before')} ${e.date_field}`
-            : `${e.days_offset}d ${__('after')} ${e.date_field}`;
+            : e.event === 'Days After'
+            ? `${e.days_offset}d ${__('after')} ${e.date_field}`
+            : __('same day as {0}', [e.date_field]);
 
         var doc_link = `<a href="/app/${frappe.router.slug(e.document_type)}/${encodeURIComponent(e.document_name)}" target="_blank">
             ${frappe.utils.escape_html(e.document_name)}

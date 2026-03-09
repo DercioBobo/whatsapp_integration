@@ -279,9 +279,9 @@ def cleanup_old_logs():
 
 def process_scheduled_rules():
     """
-    Process Days Before / Days After notification rules.
-    Runs daily to find documents whose date field matches the offset criteria
-    and sends notifications for rules that haven't fired yet.
+    Process Days Before / Days After / On Same Day notification rules.
+    Runs hourly; only executes if the current hour matches scheduled_rules_run_hour
+    (default 7 AM) configured in Evolution API Settings.
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.events import process_rule
@@ -291,11 +291,16 @@ def process_scheduled_rules():
         if not settings.get("enabled"):
             return
 
+        # Only run at the configured hour
+        run_hour = int(settings.get("scheduled_rules_run_hour") or 7)
+        if now_datetime().hour != run_hour:
+            return
+
         today = nowdate()
 
         rules = frappe.get_all(
             "WhatsApp Notification Rule",
-            filters={"enabled": 1, "event": ["in", ["Days Before", "Days After"]]},
+            filters={"enabled": 1, "event": ["in", ["Days Before", "Days After", "On Same Day"]]},
             pluck="name"
         )
 
@@ -308,15 +313,22 @@ def process_scheduled_rules():
             try:
                 rule = frappe.get_doc("WhatsApp Notification Rule", rule_name)
 
-                if not rule.date_field or not rule.days_offset:
+                if not rule.date_field:
                     continue
 
                 # Calculate which document date value triggers today
                 # "Days Before N": send when date_field == today + N
                 # "Days After N":  send when date_field == today - N
-                if rule.event == "Days Before":
+                # "On Same Day":   send when date_field == today
+                if rule.event == "On Same Day":
+                    target_doc_date = today
+                elif rule.event == "Days Before":
+                    if not rule.days_offset:
+                        continue
                     target_doc_date = add_days(today, rule.days_offset)
                 else:
+                    if not rule.days_offset:
+                        continue
                     target_doc_date = add_days(today, -rule.days_offset)
 
                 # Query documents whose date_field matches
@@ -399,7 +411,7 @@ def get_schedule_monitor_data(from_date=None, to_date=None, rule_name=None):
     if not to_date:
         to_date = add_days(nowdate(), 30)
 
-    filters = {"enabled": 1, "event": ["in", ["Days Before", "Days After"]]}
+    filters = {"enabled": 1, "event": ["in", ["Days Before", "Days After", "On Same Day"]]}
     if rule_name:
         filters["name"] = rule_name
 
@@ -416,7 +428,9 @@ def get_schedule_monitor_data(from_date=None, to_date=None, rule_name=None):
     today = nowdate()
 
     for rule in rules:
-        if not rule.get("date_field") or not rule.get("days_offset"):
+        if not rule.get("date_field"):
+            continue
+        if rule.event in ("Days Before", "Days After") and not rule.get("days_offset"):
             continue
         try:
             meta = frappe.get_meta(rule.document_type)
@@ -427,8 +441,12 @@ def get_schedule_monitor_data(from_date=None, to_date=None, rule_name=None):
             # Compute document date range that covers the requested notification window
             # notification_date = doc_date - days_offset  (Days Before)
             # notification_date = doc_date + days_offset  (Days After)
-            offset = int(rule.days_offset)
-            if rule.event == "Days Before":
+            # notification_date = doc_date                (On Same Day)
+            offset = int(rule.days_offset or 0)
+            if rule.event == "On Same Day":
+                doc_date_from = from_date
+                doc_date_to = to_date
+            elif rule.event == "Days Before":
                 doc_date_from = add_days(from_date, offset)
                 doc_date_to = add_days(to_date, offset)
             else:
@@ -473,7 +491,9 @@ def get_schedule_monitor_data(from_date=None, to_date=None, rule_name=None):
                     continue
                 doc_date_str = str(raw_date)[:10]
 
-                if rule.event == "Days Before":
+                if rule.event == "On Same Day":
+                    notif_date = doc_date_str
+                elif rule.event == "Days Before":
                     notif_date = add_days(doc_date_str, -offset)
                 else:
                     notif_date = add_days(doc_date_str, offset)

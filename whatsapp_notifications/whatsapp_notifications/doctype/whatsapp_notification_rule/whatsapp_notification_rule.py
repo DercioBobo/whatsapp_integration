@@ -77,14 +77,15 @@ class WhatsAppNotificationRule(Document):
             )
 
     def validate_date_event(self):
-        if self.event not in ("Days Before", "Days After"):
+        if self.event not in ("Days Before", "Days After", "On Same Day"):
             return
 
         if not self.date_field:
-            frappe.throw(_("Date Field is required for Days Before/After events"))
+            frappe.throw(_("Date Field is required for Days Before/After/On Same Day events"))
 
-        if not self.days_offset or self.days_offset <= 0:
-            frappe.throw(_("Days Offset must be greater than 0 for Days Before/After events"))
+        if self.event in ("Days Before", "Days After"):
+            if self.days_offset is None or self.days_offset <= 0:
+                frappe.throw(_("Days Offset must be greater than 0 for Days Before/After events"))
 
         if self.document_type:
             meta = frappe.get_meta(self.document_type)
@@ -186,6 +187,7 @@ class WhatsAppNotificationRule(Document):
             "on_trash": "On Trash",
             "days_before": "Days Before",
             "days_after": "Days After",
+            "on_same_day": "On Same Day",
         }
         if event_map.get(event) != self.event:
             return False
@@ -533,6 +535,7 @@ def get_rules_for_doctype(doctype, event):
             "on_trash": "On Trash",
             "days_before": "Days Before",
             "days_after": "Days After",
+            "on_same_day": "On Same Day",
         }
 
         rules = frappe.get_all(

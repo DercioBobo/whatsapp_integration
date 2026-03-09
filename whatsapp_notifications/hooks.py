@@ -130,8 +130,9 @@ scheduler_events = {
         "*/15 * * * *": [
             "whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_auto_report.whatsapp_auto_report.process_auto_reports"
         ],
-        # Process Days Before/After scheduled notification rules daily at 7 AM
-        "0 7 * * *": [
+        # Process Days Before/After/On Same Day scheduled notification rules
+        # Runs every hour; the function checks if current hour == scheduled_rules_run_hour setting
+        "0 * * * *": [
             "whatsapp_notifications.whatsapp_notifications.tasks.process_scheduled_rules"
         ],
         # Cleanup old logs daily at 2 AM
