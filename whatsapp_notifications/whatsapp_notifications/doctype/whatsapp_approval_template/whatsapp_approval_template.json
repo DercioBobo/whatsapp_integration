@@ -36,7 +36,9 @@
         "confirmation_template",
         "section_invalid_response",
         "send_invalid_response_help",
-        "invalid_response_template"
+        "invalid_response_template",
+        "section_already_resolved",
+        "already_resolved_template"
     ],
     "fields": [
         {
@@ -243,6 +245,21 @@
             "options": "Jinja",
             "depends_on": "send_invalid_response_help",
             "description": "Custom message for invalid responses. Available: {{ received_text }}, {{ options }}. Leave empty for default."
+        },
+        {
+            "fieldname": "section_already_resolved",
+            "fieldtype": "Section Break",
+            "label": "Already Resolved Message",
+            "collapsible": 1,
+            "depends_on": "eval:doc.first_response_wins"
+        },
+        {
+            "fieldname": "already_resolved_template",
+            "fieldtype": "Code",
+            "label": "Already Resolved Template",
+            "options": "Jinja",
+            "depends_on": "eval:doc.first_response_wins",
+            "description": "Message sent to other recipients when the approval was already resolved by the first respondent. Available: {{ doc }}. Leave empty for default."
         }
     ],
     "index_web_pages_for_search": 1,

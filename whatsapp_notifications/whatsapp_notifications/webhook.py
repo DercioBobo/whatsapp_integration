@@ -254,9 +254,15 @@ def process_potential_approval_response(sender_phone, message_text, settings):
         # Check if there's a recently processed request (duplicate response)
         recent_request = find_recent_processed_approval_for_phone(formatted_phone, sender_phone)
         if recent_request:
-            # User already responded - send a polite message
             send_already_processed_message(recent_request, settings)
             return {"processed": False, "reason": "Already processed", "duplicate": True}
+
+        # Check if this phone had a request that was cancelled because another recipient
+        # already responded (first_response_wins scenario)
+        cancelled_request = find_cancelled_approval_for_phone(formatted_phone, sender_phone)
+        if cancelled_request:
+            send_cancelled_by_other_message(cancelled_request, settings)
+            return {"processed": False, "reason": "Cancelled - resolved by another recipient"}
 
         return {"processed": False, "reason": "No pending approval for this phone"}
 
@@ -442,6 +448,68 @@ def find_recent_processed_approval_for_phone(formatted_phone, original_phone):
             return frappe.get_doc("WhatsApp Approval Request", requests[0].name)
 
     return None
+
+
+def find_cancelled_approval_for_phone(formatted_phone, original_phone):
+    """
+    Find a recently cancelled approval request for a phone number.
+    Covers the case where first_response_wins cancelled this recipient's request.
+    """
+    from frappe.utils import add_to_date, now_datetime
+
+    # Look within the expiry window — cancelled requests older than that are irrelevant
+    cutoff_time = add_to_date(now_datetime(), hours=-48)
+
+    for phone in dict.fromkeys([formatted_phone, original_phone]):
+        if not phone:
+            continue
+        requests = frappe.get_all(
+            "WhatsApp Approval Request",
+            filters={
+                "status": "Cancelled",
+                "formatted_phone": phone,
+                "creation": [">=", cutoff_time]
+            },
+            order_by="creation desc",
+            limit=1
+        )
+        if requests:
+            return frappe.get_doc("WhatsApp Approval Request", requests[0].name)
+
+    return None
+
+
+def send_cancelled_by_other_message(approval_request, settings):
+    """
+    Send a message when this recipient's approval was already resolved
+    by another recipient (first_response_wins scenario).
+    """
+    from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_notification
+
+    try:
+        template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
+
+        if template.already_resolved_template:
+            from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
+            doc = frappe.get_doc(approval_request.reference_doctype, approval_request.reference_name)
+            context = get_template_context(doc)
+            message = frappe.render_template(template.already_resolved_template, context)
+        else:
+            message = _("This approval request has already been resolved by another recipient and no further action is needed from you.")
+
+        send_whatsapp_notification(
+            phone=approval_request.recipient_phone,
+            message=message,
+            reference_doctype="WhatsApp Approval Request",
+            reference_name=approval_request.name,
+            notification_rule=None,
+            recipient_name=approval_request.recipient_name
+        )
+    except Exception as e:
+        frappe.log_error(
+            "Error sending cancelled-by-other message for {}: {}".format(approval_request.name, str(e)),
+            "WhatsApp Approval Notification Error"
+        )
 
 
 def send_already_processed_message(approval_request, settings):
