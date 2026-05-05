@@ -1194,3 +1194,88 @@ def preview_approval_message(template_name, docname):
         return {"success": True, "message": message}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def process_approval_manually(request_name, option_number, note=None):
+    """
+    Manually process an approval request, e.g. when the webhook was down
+    and the customer's reply was never received by the system.
+
+    Works for Pending and Expired requests. Executes the chosen option's
+    action, sends confirmation, and handles first_response_wins cancellation
+    — identical to what the webhook would have done.
+
+    Returns:
+        dict: success, status, action
+    """
+    from whatsapp_notifications.whatsapp_notifications.approval import (
+        execute_action,
+        determine_status_from_option,
+        cancel_other_pending_requests,
+        send_confirmation_message,
+    )
+
+    try:
+        option_number = int(option_number)
+        approval_request = frappe.get_doc("WhatsApp Approval Request", request_name)
+
+        if approval_request.status not in ("Pending", "Expired"):
+            return {
+                "success": False,
+                "error": _("Cannot process a request with status '{0}'").format(approval_request.status)
+            }
+
+        template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
+        option = template.get_option_by_number(option_number)
+
+        if not option:
+            return {"success": False, "error": _("Invalid option number: {0}").format(option_number)}
+
+        doc = frappe.get_doc(approval_request.reference_doctype, approval_request.reference_name)
+
+        # Record the response (phone is the original recipient since we don't know who replied)
+        response_text = "{} - {}{}".format(
+            option_number,
+            option.option_label,
+            " [Manual: {}]".format(note) if note else " [Manual]"
+        )
+        approval_request.record_response(option_number, response_text, approval_request.recipient_phone)
+
+        # Execute the action
+        action_result = execute_action(doc, option)
+
+        if action_result.get("success"):
+            new_status = determine_status_from_option(option.option_label)
+            approval_request.mark_processed(action_result.get("description"), new_status)
+
+            if template.first_response_wins:
+                cancel_other_pending_requests(
+                    approval_request.reference_doctype,
+                    approval_request.reference_name,
+                    approval_request.name,
+                    _("Approval manually processed")
+                )
+
+            if template.send_confirmation:
+                send_confirmation_message(template, doc, approval_request, option.option_label, action_result)
+
+            from whatsapp_notifications.whatsapp_notifications.utils import add_approval_response_comment
+            add_approval_response_comment(
+                approval_request.reference_doctype,
+                approval_request.reference_name,
+                approval_request.recipient_phone,
+                option.option_label + _(" (Manual)"),
+                new_status
+            )
+
+            frappe.db.commit()
+            return {"success": True, "status": new_status, "action": action_result.get("description")}
+        else:
+            approval_request.mark_error(action_result.get("error"))
+            frappe.db.commit()
+            return {"success": False, "error": action_result.get("error")}
+
+    except Exception as e:
+        frappe.log_error(str(e), "Manual Approval Processing Error")
+        return {"success": False, "error": str(e)}
