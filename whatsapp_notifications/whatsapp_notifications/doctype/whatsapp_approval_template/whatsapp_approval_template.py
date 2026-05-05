@@ -69,11 +69,14 @@ class WhatsAppApprovalTemplate(Document):
         """
         recipients = []
 
-        # Get from document field
+        # Get from document field (may return one number or a list)
         if self.recipient_type in ("Field Value", "Both") and self.phone_field:
             phone = get_phone_from_document(doc, self.phone_field)
             if phone:
-                recipients.append(phone)
+                phones = phone if isinstance(phone, list) else [phone]
+                for p in phones:
+                    if p and p not in recipients:
+                        recipients.append(p)
 
         # Get fixed recipients
         if self.recipient_type in ("Fixed Numbers", "Both") and self.fixed_recipients:
@@ -253,12 +256,9 @@ def get_phone_from_document(doc, phone_field):
 
             for i, part in enumerate(parts):
                 if i == 0:
-                    # First part is a field on the document
                     value = getattr(value, part, None)
                 else:
-                    # Subsequent parts need to fetch from linked doc
                     if value and i == 1:
-                        # Get the linked doctype from meta
                         prev_field = parts[i - 1]
                         meta = frappe.get_meta(doc.doctype)
                         field_meta = meta.get_field(prev_field)
@@ -273,10 +273,16 @@ def get_phone_from_document(doc, phone_field):
 
                 if not value:
                     return None
-
-            return value
         else:
-            return getattr(doc, phone_field, None)
+            value = getattr(doc, phone_field, None)
+
+        if not value:
+            return None
+
+        value = str(value).strip()
+        if "," in value:
+            return [p.strip() for p in value.split(",") if p.strip()]
+        return value
     except Exception:
         return None
 

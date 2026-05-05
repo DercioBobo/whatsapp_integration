@@ -156,6 +156,19 @@ function setup_child_field_selector(frm, cdt, cdn, fieldname) {
     });
 }
 
+function render_whatsapp_text(text) {
+    let html = $('<div>').text(text).html();
+    // WhatsApp markdown: bold, italic, strikethrough, monospace (multi-line then single-line)
+    html = html
+        .replace(/```([\s\S]+?)```/g, '<code style="font-family:monospace;background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px;font-size:13px;">$1</code>')
+        .replace(/`([^`\n]+)`/g, '<code style="font-family:monospace;background:rgba(0,0,0,.08);padding:1px 4px;border-radius:3px;font-size:13px;">$1</code>')
+        .replace(/\*([^\*\n]+)\*/g, '<strong>$1</strong>')
+        .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+        .replace(/~([^~\n]+)~/g, '<del>$1</del>')
+        .replace(/\n/g, '<br>');
+    return html;
+}
+
 function preview_approval_message(frm) {
     if (!frm.doc.message_template) {
         frappe.msgprint(__('Please add a message template first'));
@@ -183,13 +196,24 @@ function preview_approval_message(frm) {
             },
             callback: function(r) {
                 if (r.message && r.message.success) {
-                    let escaped = $('<div>').text(r.message.message).html();
+                    let formatted = render_whatsapp_text(r.message.message);
+                    let now = new Date();
+                    let time = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+
+                    let html = `
+                        <div style="background:#e5ddd5;padding:16px 20px;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+                            <div style="display:flex;justify-content:flex-end;">
+                                <div style="background:#dcf8c6;border-radius:8px 0 8px 8px;padding:8px 12px 6px 12px;max-width:85%;box-shadow:0 1px 0.5px rgba(0,0,0,.18);">
+                                    <div style="font-size:14px;line-height:1.5;color:#111b21;word-break:break-word;">${formatted}</div>
+                                    <div style="font-size:11px;color:#667781;text-align:right;margin-top:4px;">${time}&nbsp;✓✓</div>
+                                </div>
+                            </div>
+                        </div>`;
+
                     let d = new frappe.ui.Dialog({
                         title: __('Message Preview'),
-                        fields: [{
-                            fieldtype: 'HTML',
-                            options: '<pre style="white-space:pre-wrap;background:#f8f9fa;padding:15px;border-radius:6px;border:1px solid #dee2e6;font-size:13px;">' + escaped + '</pre>'
-                        }]
+                        fields: [{ fieldtype: 'HTML', options: html }],
+                        size: 'large'
                     });
                     d.show();
                 } else {

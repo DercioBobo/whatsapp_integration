@@ -119,7 +119,7 @@
             "fieldtype": "Data",
             "label": "Phone Field",
             "depends_on": "eval:doc.recipient_type=='Field Value' || doc.recipient_type=='Both'",
-            "description": "Document field containing approver's phone number. Can use dot notation (e.g., customer.mobile_no)"
+            "description": "Document field containing approver's phone number(s). Supports comma-separated numbers (e.g., 841234567,851234567) and dot notation for linked docs (e.g., customer.mobile_no)"
         },
         {
             "fieldname": "column_break_recipients",
