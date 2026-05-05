@@ -1156,15 +1156,14 @@ def get_doctype_fields(doctype):
         meta = frappe.get_meta(doctype)
         fields = []
 
-        # Field types that can contain phone numbers or be used for updates
-        valid_fieldtypes = [
-            "Data", "Phone", "Small Text", "Text", "Long Text",
-            "Link", "Dynamic Link", "Select", "Int", "Float",
-            "Currency", "Check", "Date", "Datetime", "Time"
-        ]
+        # Exclude layout/structural field types only
+        layout_fieldtypes = {
+            "Section Break", "Column Break", "Tab Break",
+            "HTML", "Heading", "Button", "Fold", "HTML Editor"
+        }
 
         for field in meta.fields:
-            if field.fieldtype in valid_fieldtypes and field.fieldname:
+            if field.fieldtype not in layout_fieldtypes and field.fieldname:
                 fields.append({
                     "fieldname": field.fieldname,
                     "label": field.label or field.fieldname,
@@ -1176,5 +1175,22 @@ def get_doctype_fields(doctype):
         fields.sort(key=lambda x: x.get("label", ""))
 
         return {"success": True, "fields": fields}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def preview_approval_message(template_name, docname):
+    """
+    Preview the rendered approval message for a given document.
+
+    Returns:
+        dict: success, message (rendered text)
+    """
+    try:
+        template = frappe.get_doc("WhatsApp Approval Template", template_name)
+        doc = frappe.get_doc(template.document_type, docname)
+        message = template.render_message(doc)
+        return {"success": True, "message": message}
     except Exception as e:
         return {"success": False, "error": str(e)}

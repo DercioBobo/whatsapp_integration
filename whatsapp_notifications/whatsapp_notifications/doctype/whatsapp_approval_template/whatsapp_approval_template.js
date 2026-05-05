@@ -3,18 +3,24 @@
 
 frappe.ui.form.on('WhatsApp Approval Template', {
     refresh: function(frm) {
-        // Setup field selectors when form loads
+        // Enable inline (in-place) editing on the response options grid
+        frm.fields_dict.response_options.grid.in_place_edit = true;
+
         if (frm.doc.document_type) {
             setup_field_selector(frm, 'phone_field');
+        }
+
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Preview Message'), function() {
+                preview_approval_message(frm);
+            });
         }
     },
 
     document_type: function(frm) {
-        // When document type changes, update field selectors
         if (frm.doc.document_type) {
             setup_field_selector(frm, 'phone_field');
         } else {
-            // Clear the awesomplete data
             clear_field_selector(frm, 'phone_field');
         }
     }
@@ -41,10 +47,10 @@ function setup_field_selector(frm, fieldname) {
                 var field = frm.get_field(fieldname);
 
                 if (field && field.$input) {
-                    // Build options for awesomplete
+                    // Build options for awesomplete — show all fields with their type
                     var options = fields.map(function(f) {
                         return {
-                            label: f.label + ' (' + f.fieldname + ')',
+                            label: f.label + ' (' + f.fieldname + ') [' + f.fieldtype + ']',
                             value: f.fieldname
                         };
                     });
@@ -106,7 +112,7 @@ function setup_child_field_selector(frm, cdt, cdn, fieldname) {
                     if (field && field.$input) {
                         var options = fields.map(function(f) {
                             return {
-                                label: f.label + ' (' + f.fieldname + ')',
+                                label: f.label + ' (' + f.fieldname + ') [' + f.fieldtype + ']',
                                 value: f.fieldname
                             };
                         });
@@ -148,6 +154,54 @@ function setup_child_field_selector(frm, cdt, cdn, fieldname) {
             }
         }
     });
+}
+
+function preview_approval_message(frm) {
+    if (!frm.doc.message_template) {
+        frappe.msgprint(__('Please add a message template first'));
+        return;
+    }
+    if (!frm.doc.response_options || !frm.doc.response_options.length) {
+        frappe.msgprint(__('Please add at least one response option first'));
+        return;
+    }
+
+    frappe.prompt([
+        {
+            fieldname: 'docname',
+            fieldtype: 'Link',
+            options: frm.doc.document_type,
+            label: __('Document to Preview With'),
+            reqd: 1
+        }
+    ], function(values) {
+        frappe.call({
+            method: 'whatsapp_notifications.whatsapp_notifications.api.preview_approval_message',
+            args: {
+                template_name: frm.doc.name,
+                docname: values.docname
+            },
+            callback: function(r) {
+                if (r.message && r.message.success) {
+                    let escaped = $('<div>').text(r.message.message).html();
+                    let d = new frappe.ui.Dialog({
+                        title: __('Message Preview'),
+                        fields: [{
+                            fieldtype: 'HTML',
+                            options: '<pre style="white-space:pre-wrap;background:#f8f9fa;padding:15px;border-radius:6px;border:1px solid #dee2e6;font-size:13px;">' + escaped + '</pre>'
+                        }]
+                    });
+                    d.show();
+                } else {
+                    frappe.msgprint({
+                        title: __('Preview Error'),
+                        message: r.message ? frappe.utils.escape_html(r.message.error) : __('Unknown error'),
+                        indicator: 'red'
+                    });
+                }
+            }
+        });
+    }, __('Preview Approval Message'), __('Preview'));
 }
 
 function clear_field_selector(frm, fieldname) {
