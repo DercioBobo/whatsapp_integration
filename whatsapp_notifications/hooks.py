@@ -224,6 +224,13 @@ fixtures = [
 # Add custom Jinja filters/functions for templates
 jenv = {
     "methods": [
-        "whatsapp_notifications.whatsapp_notifications.utils.jinja_methods"
+        "whatsapp_notifications.whatsapp_notifications.utils.html_to_whatsapp",
+        "whatsapp_notifications.whatsapp_notifications.utils.whatsapp_bold",
+        "whatsapp_notifications.whatsapp_notifications.utils.whatsapp_italic",
+        "whatsapp_notifications.whatsapp_notifications.utils.whatsapp_strike",
+        "whatsapp_notifications.whatsapp_notifications.utils.whatsapp_code",
+        "whatsapp_notifications.whatsapp_notifications.utils.format_mzn",
+        "whatsapp_notifications.whatsapp_notifications.utils.format_phone_number",
+        "whatsapp_notifications.whatsapp_notifications.utils.strip_accents"
     ]
 }
