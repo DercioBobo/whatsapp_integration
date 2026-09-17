@@ -222,7 +222,7 @@ fixtures = [
 # Jinja Environment
 # -----------------
 # Add custom Jinja filters/functions for templates
-jenv = {
+jinja = {
     "methods": [
         "whatsapp_notifications.whatsapp_notifications.utils.html_to_whatsapp",
         "whatsapp_notifications.whatsapp_notifications.utils.whatsapp_bold",
