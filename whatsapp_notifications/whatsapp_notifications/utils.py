@@ -5,6 +5,7 @@ Phone formatting, validation, and Jinja helpers
 import frappe
 from frappe import _
 import re
+import html as html_lib
 
 
 def format_phone_number(phone, country_code=None, local_length=None, local_prefixes=None):
@@ -175,7 +176,8 @@ def jinja_methods():
         "whatsapp_strike": whatsapp_strike,
         "whatsapp_code": whatsapp_code,
         "format_mzn": format_mzn,
-        "strip_accents": strip_accents
+        "strip_accents": strip_accents,
+        "html_to_whatsapp": html_to_whatsapp
     }
 
 
@@ -197,6 +199,61 @@ def whatsapp_strike(text):
 def whatsapp_code(text):
     """Format text as monospace for WhatsApp"""
     return "`{}`".format(text) if text else ""
+
+
+def html_to_whatsapp(html):
+    """
+    Convert Quill/HTML content (e.g. a Text Editor field) into WhatsApp-formatted
+    plain text.
+
+    Args:
+        html: HTML string
+
+    Returns:
+        str: WhatsApp-formatted text
+    """
+    if not html:
+        return ""
+
+    text = str(html)
+
+    # Headings -> *bold* line
+    text = re.sub(r'<h[1-6][^>]*>(.*?)</h[1-6]>', r'*\1*\n', text, flags=re.I | re.S)
+
+    # Bold / italic
+    text = re.sub(r'<(?:b|strong)[^>]*>(.*?)</(?:b|strong)>', r'*\1*', text, flags=re.I | re.S)
+    text = re.sub(r'<(?:i|em)[^>]*>(.*?)</(?:i|em)>', r'_\1_', text, flags=re.I | re.S)
+
+    # List items -> bullet points
+    text = re.sub(r'<li[^>]*>(.*?)</li>', r'• \1\n', text, flags=re.I | re.S)
+    text = re.sub(r'</?(?:ul|ol)[^>]*>', '', text, flags=re.I)
+
+    # Paragraphs / line breaks -> newlines
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.I)
+    text = re.sub(r'<p[^>]*>', '', text, flags=re.I)
+    text = re.sub(r'</p>', '\n', text, flags=re.I)
+
+    # Strip any remaining HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # Unescape HTML entities (&amp;, &nbsp;, etc.)
+    text = html_lib.unescape(text)
+    text = text.replace('\xa0', ' ')
+
+    # Normalize whitespace: trim each line, collapse repeated blank lines, trim ends
+    lines = [line.strip() for line in text.splitlines()]
+    cleaned_lines = []
+    prev_blank = False
+    for line in lines:
+        if line == "":
+            if not prev_blank:
+                cleaned_lines.append("")
+            prev_blank = True
+        else:
+            cleaned_lines.append(line)
+            prev_blank = False
+
+    return "\n".join(cleaned_lines).strip()
 
 
 def format_mzn(amount, symbol="MZN"):
