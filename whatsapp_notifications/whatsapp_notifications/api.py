@@ -260,11 +260,12 @@ def process_message_log(log_name):
             "number": log.formatted_phone,
             "text": log.message
         }
+        add_mentions_to_payload(payload, log)
 
-        
-        # Make request using compatible method
+
+        # Make request using compatible method (falls back to untagged if tags fail)
         try:
-            response = make_http_request(url, method="POST", headers=headers, data=payload)
+            response = post_with_mention_fallback(url, headers, payload, log, "text")
             
             # Extract message ID from response
             response_id = None
@@ -338,6 +339,194 @@ def get_notification_stats():
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import get_message_stats
     return get_message_stats()
+
+
+def add_mentions_to_payload(payload, log):
+    """
+    Add @mentions to an Evolution API v2 sendText/sendMedia payload.
+    Only applies to group recipients.
+    """
+    if not is_group_id(log.formatted_phone):
+        return payload
+
+    mentioned = [m.strip() for m in (log.get("mentions") or "").split(",") if m.strip()]
+    if mentioned:
+        payload["mentioned"] = mentioned
+    if log.get("mention_everyone"):
+        payload["mentionsEveryOne"] = True
+    return payload
+
+
+def strip_mentions_from_text(text, numbers):
+    """
+    Remove '@<number>' tags from a message. Lines that only held tags are
+    dropped; other lines keep their content with the tag removed.
+    """
+    import re
+
+    if not text or not numbers:
+        return text
+    pattern = re.compile(r"@(?:{})(?!\d)".format("|".join(re.escape(n) for n in numbers)))
+    lines = []
+    for line in text.split("\n"):
+        if not pattern.search(line):
+            lines.append(line)
+            continue
+        cleaned = re.sub(r"[ \t]{2,}", " ", pattern.sub("", line))
+        cleaned = re.sub(r"[ \t]+([,.;:!?])", r"\1", cleaned).rstrip()
+        if cleaned.strip():
+            lines.append(cleaned)
+    result = "\n".join(lines)
+    return re.sub(r"\n{3,}", "\n\n", result).strip()
+
+
+def post_with_mention_fallback(url, headers, payload, log, text_key):
+    """
+    POST a message payload. If it carries @mentions and the request fails,
+    retry once with the tags stripped (payload + text) so the message is still
+    delivered. The log is updated in memory to reflect what was actually sent;
+    the caller's mark_sent() persists it.
+
+    Args:
+        text_key: "text" for sendText, "caption" for sendMedia
+    """
+    has_mentions = "mentioned" in payload or "mentionsEveryOne" in payload
+
+    try:
+        return make_http_request(url, method="POST", headers=headers, data=payload)
+    except Exception as first_error:
+        if not has_mentions:
+            raise
+
+        numbers = payload.get("mentioned") or []
+        stripped = {k: v for k, v in payload.items() if k not in ("mentioned", "mentionsEveryOne")}
+        stripped[text_key] = strip_mentions_from_text(payload.get(text_key) or "", numbers)
+
+        frappe.log_error(
+            message="{} -> send with tags failed, retrying without tags.\nError: {}\nTags: {}{}".format(
+                log.name, first_error, ", ".join(numbers) or "-",
+                " (+everyone)" if payload.get("mentionsEveryOne") else ""
+            ),
+            title="WhatsApp Mention Fallback"
+        )
+
+        # If this also fails, the caller marks the log as failed with this error
+        response = make_http_request(url, method="POST", headers=headers, data=stripped)
+
+        if text_key == "caption":
+            log.caption = stripped[text_key]
+            log.message = stripped[text_key]
+        else:
+            log.message = stripped[text_key]
+        log.mentions = None
+        log.mention_everyone = 0
+        log.error_message = "Sent without tags (tagging failed): {}".format(first_error)[:500]
+        return response
+
+
+@frappe.whitelist()
+def fetch_group_participants(group_id):
+    """
+    Fetch the participants of a WhatsApp group from Evolution API
+
+    Args:
+        group_id: Group JID (ending with @g.us)
+
+    Returns:
+        dict: {"success": True, "participants": [{"number", "name", "admin"}], "hidden": n}
+              "hidden" counts members whose phone number WhatsApp keeps private (LID only),
+              which cannot be tagged by number.
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+    from urllib.parse import quote
+
+    if not is_group_id(group_id):
+        return {"success": False, "error": _("Invalid group ID")}
+
+    settings = get_settings()
+
+    if not settings.get("api_url") or not settings.get("api_key") or not settings.get("instance_name"):
+        return {"success": False, "error": _("Evolution API not configured")}
+
+    url = "{}/group/participants/{}?groupJid={}".format(
+        settings.get("api_url"),
+        settings.get("instance_name"),
+        quote(group_id, safe="")
+    )
+    headers = {"apikey": settings.get("api_key")}
+
+    try:
+        response = make_http_request(url, method="GET", headers=headers)
+
+        raw = []
+        if isinstance(response, dict):
+            raw = response.get("participants") or []
+        elif isinstance(response, list):
+            raw = response
+
+        participants = []
+        seen = set()
+        hidden = 0
+        for p in raw:
+            if not isinstance(p, dict):
+                continue
+            # Newer WhatsApp versions may return a LID in "id" and the real JID in "phoneNumber"/"jid"
+            jid = None
+            for key in ("phoneNumber", "jid", "id"):
+                val = p.get(key)
+                if val and isinstance(val, str) and "@lid" not in val:
+                    jid = val
+                    break
+            if not jid:
+                hidden += 1
+                continue
+
+            number = "".join(ch for ch in jid.split("@")[0].split(":")[0] if ch.isdigit())
+            if not number or number in seen:
+                continue
+            seen.add(number)
+
+            participants.append({
+                "number": number,
+                "name": p.get("name") or p.get("pushName") or p.get("notify") or p.get("verifiedName") or "",
+                "admin": p.get("admin") or ""
+            })
+
+        _fill_names_from_contacts(participants)
+        participants.sort(key=lambda x: ((x["name"] or "~").lower(), x["number"]))
+
+        return {"success": True, "participants": participants, "hidden": hidden}
+
+    except Exception as e:
+        frappe.log_error(
+            message=str(e),
+            title="WhatsApp Fetch Group Participants Error"
+        )
+        return {"success": False, "error": str(e)}
+
+
+def _fill_names_from_contacts(participants):
+    """Best-effort: name unnamed participants from ERPNext Contacts (matched on last 9 digits)."""
+    unnamed = [p for p in participants if not p["name"]]
+    if not unnamed or not frappe.db.exists("DocType", "Contact Phone"):
+        return
+    try:
+        rows = frappe.get_all(
+            "Contact Phone",
+            fields=["phone", "parent"],
+            limit_page_length=0
+        )
+        by_suffix = {}
+        for r in rows:
+            digits = "".join(ch for ch in (r.phone or "") if ch.isdigit())
+            if len(digits) >= 9:
+                by_suffix.setdefault(digits[-9:], r.parent)
+        for p in unnamed:
+            contact = by_suffix.get(p["number"][-9:])
+            if contact:
+                p["name"] = frappe.db.get_value("Contact", contact, "full_name") or contact
+    except Exception:
+        pass
 
 
 def is_group_id(recipient):
@@ -602,6 +791,7 @@ def process_media_message_log(log_name):
             "media": media_base64,  # Raw base64 string without data URI prefix
             "fileName": log.file_name or "document.pdf"
         }
+        add_mentions_to_payload(payload, log)
 
         # Debug logging for payload (without the actual base64 data)
         if settings.get("enable_debug_logging"):
@@ -612,9 +802,9 @@ def process_media_message_log(log_name):
                 "WhatsApp Media Debug"
             )
 
-        # Make request
+        # Make request (falls back to untagged if tags fail)
         try:
-            response = make_http_request(url, method="POST", headers=headers, data=payload)
+            response = post_with_mention_fallback(url, headers, payload, log, "caption")
 
             # Extract message ID from response
             response_id = None

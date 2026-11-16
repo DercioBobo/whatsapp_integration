@@ -32,9 +32,14 @@ class WhatsAppNotificationRule(Document):
         meta = frappe.get_meta(self.document_type)
         warnings = []
 
-        # Validate phone_field (comma-separated, dot-notation supported)
+        # Validate phone_field and group_mention_fields (comma-separated, dot-notation supported)
+        doc_level_fields = []
         if self.phone_field and not self.use_child_table:
-            for field in [f.strip() for f in self.phone_field.split(",") if f.strip()]:
+            doc_level_fields.extend(self.phone_field.split(","))
+        if self.group_mention_fields:
+            doc_level_fields.extend(self.group_mention_fields.split(","))
+        if doc_level_fields:
+            for field in [f.strip() for f in doc_level_fields if f.strip()]:
                 if "." in field:
                     parts = field.split(".", 1)
                     parent_df = meta.get_field(parts[0])
@@ -311,6 +316,34 @@ class WhatsAppNotificationRule(Document):
 
         return recipients
 
+    def get_group_mentions(self, doc):
+        """
+        Numbers to @mention in group messages: the fixed members picked on
+        the rule plus any numbers found in the configured document fields.
+        Returns a de-duplicated list of WhatsApp-formatted numbers.
+        """
+        from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
+
+        if self.recipient_type not in ("WhatsApp Group", "Document + Group") or not self.group_id:
+            return []
+
+        raw = []
+        if self.group_mentions:
+            raw.extend(_split_phone_value(self.group_mentions.replace("\n", ",")))
+
+        if self.group_mention_fields and doc is not None:
+            for field in [f.strip() for f in self.group_mention_fields.split(",") if f.strip()]:
+                val = get_nested_value(doc, field)
+                if val:
+                    raw.extend(_split_phone_value(str(val)))
+
+        numbers = []
+        for phone in raw:
+            formatted = format_phone_number(phone)
+            if formatted and formatted not in numbers:
+                numbers.append(formatted)
+        return numbers
+
     def _build_row_entries(self, doc, child_rows, watch_fields=None):
         doc_before = doc.get_doc_before_save()
         prev_rows_by_name = {}
@@ -369,6 +402,7 @@ class WhatsAppNotificationRule(Document):
             context["changed_values"] = {f: getattr(row, f, None) for f in cf} if row else {}
             context["previous_values"] = {f: getattr(row_before, f, None) for f in cf} if row_before else {}
             context["row_before"] = row_before
+            context["mentions"] = "" if for_owner else format_mentions(self.get_group_mentions(doc))
             return frappe.render_template(template, context)
         except Exception as e:
             frappe.log_error(
@@ -458,7 +492,29 @@ def _make_dummy_render_context():
     context["changed_values"] = {}
     context["previous_values"] = {}
     context["row_before"] = None
+    context["mentions"] = ""
     return context
+
+
+def format_mentions(numbers):
+    """Render numbers as WhatsApp tags: '@258841234567 @258821234567'."""
+    return " ".join("@{}".format(n) for n in (numbers or []))
+
+
+def apply_mentions_to_text(text, numbers):
+    """
+    WhatsApp only highlights a tag when '@<number>' appears in the text.
+    If the template didn't place the tags itself (via {{ mentions }}),
+    append the missing ones at the end of the message.
+    """
+    if not numbers:
+        return text
+    text = text or ""
+    missing = [n for n in numbers if "@{}".format(n) not in text]
+    if not missing:
+        return text
+    tags = format_mentions(missing)
+    return "{}\n\n{}".format(text.rstrip(), tags) if text.strip() else tags
 
 
 def _normalize(val):
@@ -711,7 +767,16 @@ def preview_message(rule_name, docname):
     rule = frappe.get_doc("WhatsApp Notification Rule", rule_name)
     doc = frappe.get_doc(rule.document_type, docname)
 
+    from whatsapp_notifications.whatsapp_notifications.api import strip_mentions_from_text
+
     recipients = rule.get_recipients(doc)
+    mentions = rule.get_group_mentions(doc)
+    has_group = any(r["type"] == "group" for r in recipients)
+    mention_info = {
+        "mentions": mentions if has_group else [],
+        "mention_everyone": bool(rule.mention_everyone) if has_group else False,
+        "mention_names": _get_mention_names(rule, mentions) if has_group else {},
+    }
 
     if rule.use_child_table and rule.child_table:
         row_previews = []
@@ -722,17 +787,23 @@ def preview_message(rule_name, docname):
                 changed_fields=r.get("changed_fields"),
                 row_before=r.get("row_before")
             )
+            if r["type"] == "group":
+                msg = apply_mentions_to_text(msg, mentions)
             row_previews.append({
-                "recipient": r["value"],
+                "recipient": (rule.group_name or r["value"]) if r["type"] == "group" else r["value"],
                 "type": r["type"],
                 "row": r.get("row") and getattr(r["row"], "name", None),
-                "message": msg
+                "message": msg,
+                # Test Send goes to a single phone, where tags don't apply
+                "message_plain": strip_mentions_from_text(msg, mentions)
             })
-        return {
+        result = {
             "row_previews": row_previews,
             "doctype": rule.document_type,
             "docname": docname
         }
+        result.update(mention_info)
+        return result
 
     message = rule.render_message(doc)
     formatted_recipients = []
@@ -742,9 +813,43 @@ def preview_message(rule_name, docname):
         else:
             formatted_recipients.append(r["value"])
 
-    return {
+    if has_group:
+        message = apply_mentions_to_text(message, mentions)
+
+    result = {
         "message": message,
+        "message_plain": strip_mentions_from_text(message, mentions),
         "recipients": formatted_recipients,
         "doctype": rule.document_type,
         "docname": docname
     }
+    result.update(mention_info)
+    return result
+
+
+def _get_mention_names(rule, numbers):
+    """
+    Best-effort display names for tagged numbers, so the preview can show
+    '@John Doe' like WhatsApp does. Never fails the preview.
+    """
+    if not numbers:
+        return {}
+    names = {}
+    try:
+        from whatsapp_notifications.whatsapp_notifications.api import (
+            fetch_group_participants, _fill_names_from_contacts
+        )
+        res = fetch_group_participants(rule.group_id) or {}
+        by_number = {p["number"]: p.get("name") for p in res.get("participants") or []}
+        for n in numbers:
+            if by_number.get(n):
+                names[n] = by_number[n]
+        # Numbers not found in the group (e.g. from document fields): try Contacts
+        missing = [{"number": n, "name": ""} for n in numbers if n not in names]
+        _fill_names_from_contacts(missing)
+        for p in missing:
+            if p["name"]:
+                names[p["number"]] = p["name"]
+    except Exception:
+        pass
+    return names

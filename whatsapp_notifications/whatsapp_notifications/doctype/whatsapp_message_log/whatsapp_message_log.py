@@ -90,7 +90,8 @@ class WhatsAppMessageLog(Document):
 def create_message_log(phone, message, reference_doctype=None, reference_name=None,
                        notification_rule=None, recipient_name=None, formatted_phone=None,
                        scheduled_time=None, message_type=None, media_type=None,
-                       file_name=None, file_size=None, caption=None):
+                       file_name=None, file_size=None, caption=None,
+                       mentions=None, mention_everyone=False):
     """
     Create a new message log entry
 
@@ -108,6 +109,8 @@ def create_message_log(phone, message, reference_doctype=None, reference_name=No
         file_name: Name of the file being sent
         file_size: Size of file in bytes
         caption: Caption for media messages
+        mentions: List of numbers to @mention (group messages)
+        mention_everyone: Mention all group members
 
     Returns:
         WhatsApp Message Log document
@@ -134,7 +137,9 @@ def create_message_log(phone, message, reference_doctype=None, reference_name=No
         "media_type": media_type,
         "file_name": file_name,
         "file_size": file_size,
-        "caption": caption
+        "caption": caption,
+        "mentions": ",".join(mentions) if mentions else None,
+        "mention_everyone": 1 if mention_everyone else 0
     })
 
     log.insert(ignore_permissions=True)

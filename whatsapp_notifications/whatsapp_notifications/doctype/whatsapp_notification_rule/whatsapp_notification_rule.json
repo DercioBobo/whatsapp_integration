@@ -27,6 +27,12 @@
         "group_id",
         "group_name",
         "select_group_button",
+        "section_group_mentions",
+        "mention_everyone",
+        "group_mention_fields",
+        "column_break_group_mentions",
+        "group_mentions",
+        "select_mentions_button",
         "section_row_conditions",
         "only_changed_rows",
         "child_watch_fields",
@@ -199,6 +205,43 @@
             "fieldtype": "Button",
             "label": "Select Group",
             "depends_on": "eval:doc.recipient_type=='WhatsApp Group' || doc.recipient_type=='Document + Group'"
+        },
+        {
+            "fieldname": "section_group_mentions",
+            "fieldtype": "Section Break",
+            "label": "Tag Group Members",
+            "collapsible": 1,
+            "collapsible_depends_on": "eval:doc.mention_everyone || doc.group_mentions || doc.group_mention_fields",
+            "depends_on": "eval:(doc.recipient_type=='WhatsApp Group' || doc.recipient_type=='Document + Group') && doc.group_id",
+            "description": "Tag (@mention) members in the group message. Use {{ mentions }} in the template to place the tags; otherwise they are appended at the end of the message."
+        },
+        {
+            "default": "0",
+            "fieldname": "mention_everyone",
+            "fieldtype": "Check",
+            "label": "Tag Everyone",
+            "description": "Notify all group members (silent @everyone mention)"
+        },
+        {
+            "fieldname": "group_mention_fields",
+            "fieldtype": "Data",
+            "label": "Tag From Document Fields",
+            "description": "Comma-separated document fields with phone numbers to tag (e.g. the assigned user's mobile)"
+        },
+        {
+            "fieldname": "column_break_group_mentions",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "group_mentions",
+            "fieldtype": "Small Text",
+            "label": "Members to Tag",
+            "description": "Phone numbers to tag in the group (one per line or comma separated). Use the button below to pick from the group."
+        },
+        {
+            "fieldname": "select_mentions_button",
+            "fieldtype": "Button",
+            "label": "Select Members to Tag"
         },
         {
             "fieldname": "section_row_conditions",
@@ -389,7 +432,7 @@
             "link_fieldname": "notification_rule"
         }
     ],
-    "modified": "2024-01-01 00:00:00.000000",
+    "modified": "2026-11-16 00:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Notification Rule",

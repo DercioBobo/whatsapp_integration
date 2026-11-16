@@ -21,6 +21,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         }
 
         setup_template_help(frm);
+        frm._last_group_id = frm.doc.group_id;
 
         if (frm.doc.document_type) {
             setup_doctype_pickers(frm);
@@ -36,6 +37,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
 
     document_type: function (frm) {
         frm.set_value('phone_field', '');
+        frm.set_value('group_mention_fields', '');
         frm.set_value('value_changed', '');
         frm.set_value('child_table', '');
         frm.set_value('child_phone_field', '');
@@ -43,6 +45,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         frm.set_value('date_field', '');
 
         destroy_chip_picker(frm, 'phone_field');
+        destroy_chip_picker(frm, 'group_mention_fields');
         destroy_chip_picker(frm, 'value_changed');
         destroy_chip_picker(frm, 'child_phone_field');
         destroy_chip_picker(frm, 'child_watch_fields');
@@ -82,7 +85,21 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         if (!needs_group) {
             frm.set_value('group_id', '');
             frm.set_value('group_name', '');
+            clear_group_mentions(frm);
         }
+    },
+
+    group_id: function (frm) {
+        // Members picked for a previous group don't belong to the new one
+        if (frm.doc.group_mentions && frm._last_group_id && frm._last_group_id !== frm.doc.group_id) {
+            frm.set_value('group_mentions', '');
+            frappe.show_alert({ message: __('Group changed: tagged members were cleared'), indicator: 'orange' }, 4);
+        }
+        frm._last_group_id = frm.doc.group_id;
+    },
+
+    select_mentions_button: function (frm) {
+        show_mention_selection_dialog(frm);
     },
 
     use_child_table: function (frm) {
@@ -200,6 +217,7 @@ function setup_doctype_pickers(frm) {
         callback: function (r) {
             if (r.message) {
                 setup_chip_picker(frm, 'phone_field', r.message, __('Add Phone Field'));
+                setup_chip_picker(frm, 'group_mention_fields', r.message, __('Add Phone Field to Tag'));
             }
         }
     });
@@ -289,6 +307,7 @@ function setup_template_help(frm) {
                 <li><code>{{ changed_fields }}</code> — ${__('List of changed field names')}</li>
                 <li><code>{{ changed_values.fieldname }}</code> — ${__('New value of changed field')}</li>
                 <li><code>{{ previous_values.fieldname }}</code> — ${__('Old value of changed field')}</li>
+                <li><code>{{ mentions }}</code> — ${__('Tags for group members (e.g. @258841234567). Appended at the end if not used.')}</li>
                 <li><code>{{ format_date(doc.date_field) }}</code> — ${__('Formatted date')}</li>
                 <li><code>{{ format_currency(doc.amount, "USD") }}</code> — ${__('Formatted currency')}</li>
             </ul>
@@ -364,6 +383,106 @@ function show_group_selection_dialog(frm) {
     });
 }
 
+// ─── Group Member Mentions ────────────────────────────────────────────────────
+
+function clear_group_mentions(frm) {
+    if (frm.doc.mention_everyone) frm.set_value('mention_everyone', 0);
+    if (frm.doc.group_mentions) frm.set_value('group_mentions', '');
+    if (frm.doc.group_mention_fields) frm.set_value('group_mention_fields', '');
+}
+
+function parse_number_list(value) {
+    return (value || '').split(/[\n,;\/]+/).map(v => v.replace(/\D/g, '')).filter(Boolean);
+}
+
+function show_mention_selection_dialog(frm) {
+    if (!frm.doc.group_id) {
+        frappe.msgprint(__('Select a WhatsApp group first.'));
+        return;
+    }
+
+    frappe.call({
+        method: 'whatsapp_notifications.whatsapp_notifications.api.fetch_group_participants',
+        args: { group_id: frm.doc.group_id },
+        freeze: true,
+        freeze_message: __('Fetching group members...'),
+        callback: function (r) {
+            if (!r.message || !r.message.success) {
+                frappe.msgprint({
+                    title: __('Error'),
+                    indicator: 'red',
+                    message: (r.message && r.message.error) || __('Failed to fetch group members')
+                });
+                return;
+            }
+
+            let participants = r.message.participants || [];
+            if (!participants.length) {
+                frappe.msgprint(__('No taggable members found in this group.'));
+                return;
+            }
+
+            // Match saved numbers by suffix so "841234567" and "258841234567" are the same member
+            let current = parse_number_list(frm.doc.group_mentions);
+            let is_selected = n => current.some(c => n === c || n.endsWith(c) || c.endsWith(n));
+            let known = new Set();
+
+            let options = participants.map(p => {
+                if (is_selected(p.number)) known.add(p.number);
+                let label = p.name ? `${p.name} (+${p.number})` : `+${p.number}`;
+                if (p.admin) label += ` — ${__('admin')}`;
+                return { label: label, value: p.number, checked: is_selected(p.number) ? 1 : 0 };
+            });
+
+            // Numbers saved on the rule that are no longer in the group
+            let orphans = current.filter(c => !participants.some(p => p.number === c || p.number.endsWith(c) || c.endsWith(p.number)));
+
+            let fields = [
+                { fieldname: 'search', fieldtype: 'Data', label: __('Search'), placeholder: __('Filter by name or number') },
+                { fieldname: 'members', fieldtype: 'MultiCheck', label: __('Members'), columns: 1, options: options }
+            ];
+            if (orphans.length) {
+                fields.push({
+                    fieldname: 'orphans_html', fieldtype: 'HTML',
+                    options: `<p class="text-muted small">${__('Kept (not found in group)')}: ${frappe.utils.escape_html(orphans.join(', '))}</p>`
+                });
+            }
+            if (r.message.hidden) {
+                fields.push({
+                    fieldname: 'hidden_html', fieldtype: 'HTML',
+                    options: `<p class="text-muted small">${__('{0} member(s) hide their phone number and cannot be tagged by number.', [r.message.hidden])}</p>`
+                });
+            }
+
+            let dialog = new frappe.ui.Dialog({
+                title: __('Tag Members of {0}', [frm.doc.group_name || frm.doc.group_id]),
+                fields: fields,
+                size: 'large',
+                primary_action_label: __('Save Selection'),
+                primary_action: function () {
+                    let selected = dialog.fields_dict.members.get_checked_options();
+                    frm.set_value('group_mentions', orphans.concat(selected).join('\n'));
+                    dialog.hide();
+                    frappe.show_alert({ message: __('{0} member(s) will be tagged', [orphans.length + selected.length]), indicator: 'green' }, 3);
+                },
+                secondary_action_label: __('Clear All'),
+                secondary_action: function () {
+                    dialog.fields_dict.members.$wrapper.find('input[type=checkbox]').prop('checked', false);
+                }
+            });
+
+            dialog.fields_dict.search.$input.on('input', function () {
+                let q = ($(this).val() || '').toLowerCase().trim();
+                dialog.fields_dict.members.$wrapper.find('.checkbox').each(function () {
+                    $(this).toggle(!q || $(this).text().toLowerCase().includes(q));
+                });
+            });
+
+            dialog.show();
+        }
+    });
+}
+
 // ─── Preview ──────────────────────────────────────────────────────────────────
 
 function show_preview_dialog(frm) {
@@ -414,6 +533,9 @@ function render_preview(frm, docname, dialog) {
             if (!r.message) return;
 
             let html;
+            let bubble = msg => render_message_with_tags(msg, r.message.mention_names || {});
+            let everyone = r.message.mention_everyone
+                ? `<div class="text-muted small mb-1"><span class="indicator-pill blue">${__('Tags everyone')}</span></div>` : '';
             if (r.message.row_previews) {
                 if (r.message.row_previews.length === 0) {
                     html = `<p class="text-muted">${__('No matching rows found')}</p>`;
@@ -424,9 +546,8 @@ function render_preview(frm, docname, dialog) {
                                 ${__('Row')}: ${frappe.utils.escape_html(rp.row || 'N/A')} &nbsp;|&nbsp;
                                 ${rp.type === 'group' ? __('Group') : __('Phone')}: ${frappe.utils.escape_html(rp.recipient)}
                             </div>
-                            <div style="background:#DCF8C6;padding:8px;border-radius:6px;white-space:pre-wrap;font-family:system-ui,sans-serif;">
-                                ${frappe.utils.escape_html(rp.message || '')}
-                            </div>
+                            ${rp.type === 'group' ? everyone : ''}
+                            <div style="background:#DCF8C6;padding:8px;border-radius:6px;white-space:pre-wrap;font-family:system-ui,sans-serif;">${bubble(rp.message || '')}</div>
                         </div>
                     `).join('');
                 }
@@ -436,17 +557,34 @@ function render_preview(frm, docname, dialog) {
                         <label class="text-muted">${__('Recipients')}:</label>
                         <div>${frappe.utils.escape_html((r.message.recipients || []).join(', ') || __('No recipients found'))}</div>
                     </div>
+                    ${(r.message.mention_everyone || (r.message.mentions || []).length) ? `
+                    <div class="mb-3">
+                        <label class="text-muted">${__('Tagged in Group')}:</label>
+                        <div>${r.message.mention_everyone ? `<span class="indicator-pill blue">${__('Everyone')}</span> ` : ''}${(r.message.mentions || []).map(n => {
+                            let name = (r.message.mention_names || {})[n];
+                            return frappe.utils.escape_html(name ? `${name} (+${n})` : `+${n}`);
+                        }).join(', ')}</div>
+                    </div>` : ''}
                     <div>
                         <label class="text-muted">${__('Message')}:</label>
-                        <div style="background:#DCF8C6;padding:12px;border-radius:6px;white-space:pre-wrap;font-family:system-ui,sans-serif;margin-top:4px;">
-                            ${frappe.utils.escape_html(r.message.message || __('Empty message'))}
-                        </div>
+                        <div style="background:#DCF8C6;padding:12px;border-radius:6px;white-space:pre-wrap;font-family:system-ui,sans-serif;margin-top:4px;">${r.message.message ? bubble(r.message.message) : frappe.utils.escape_html(__('Empty message'))}</div>
                     </div>
                 `;
             }
 
             dialog.fields_dict.preview_html.$wrapper.html(html);
         }
+    });
+}
+
+// Escape the message and render '@<number>' tags the way WhatsApp shows them:
+// highlighted, with the member's name when known (number kept in the tooltip).
+function render_message_with_tags(message, names) {
+    let html = frappe.utils.escape_html(message || '');
+    return html.replace(/@(\d{6,15})(?!\d)/g, function (match, number) {
+        let name = names[number];
+        let label = name ? '@' + frappe.utils.escape_html(name) : match;
+        return `<span title="+${number}" style="color:#027eb5;font-weight:500;">${label}</span>`;
     });
 }
 
@@ -466,7 +604,12 @@ function show_test_dialog(frm) {
                 method: WNR_MODULE + '.preview_message',
                 args: { rule_name: frm.doc.name, docname: values.test_docname },
                 callback: function (r) {
-                    let msg = r.message && (r.message.message || (r.message.row_previews && r.message.row_previews[0] && r.message.row_previews[0].message));
+                    // Use the untagged text: tags only work in groups, not in a test chat
+                    let first_row = r.message && r.message.row_previews && r.message.row_previews[0];
+                    let msg = r.message && (
+                        r.message.message_plain || r.message.message ||
+                        (first_row && (first_row.message_plain || first_row.message))
+                    );
                     if (!msg) {
                         frappe.msgprint(__('Could not render message template'));
                         return;

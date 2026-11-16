@@ -228,6 +228,11 @@ def process_rule(doc, rule, settings):
             seconds=rule.delay_seconds
         )
 
+    # Members to @mention when sending to a group
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import apply_mentions_to_text
+    group_mentions = rule.get_group_mentions(doc)
+    mention_everyone = bool(getattr(rule, "mention_everyone", 0))
+
     # Send to all recipients
     for recipient in recipients:
         try:
@@ -247,9 +252,12 @@ def process_rule(doc, rule, settings):
                 # For groups, use the group name from the rule
                 recipient_name = rule.group_name or "Group"
 
+            is_group = recipient_type == "group" or is_group_id(phone_or_group)
+            mentions = group_mentions if is_group else []
+
             send_notification(
                 phone=phone_or_group,
-                message=message,
+                message=apply_mentions_to_text(message, mentions) if mentions else message,
                 reference_doctype=doc.doctype,
                 reference_name=doc.name,
                 notification_rule=rule.name,
@@ -258,7 +266,9 @@ def process_rule(doc, rule, settings):
                 settings=settings,
                 message_type=message_type,
                 print_format=getattr(rule, 'print_format', None),
-                fixed_file_url=getattr(rule, 'fixed_file', None)
+                fixed_file_url=getattr(rule, 'fixed_file', None),
+                mentions=mentions,
+                mention_everyone=mention_everyone and is_group
             )
         except Exception as e:
             frappe.log_error(
@@ -304,7 +314,8 @@ def is_group_id(recipient):
 
 def send_notification(phone, message, reference_doctype, reference_name,
                       notification_rule, recipient_name, scheduled_time, settings,
-                      message_type="Text Only", print_format=None, fixed_file_url=None):
+                      message_type="Text Only", print_format=None, fixed_file_url=None,
+                      mentions=None, mention_everyone=False):
     """
     Create message log and optionally send immediately
 
@@ -320,6 +331,8 @@ def send_notification(phone, message, reference_doctype, reference_name,
         message_type: Type of message (Text Only, Attached File, Document PDF, Fixed File)
         print_format: Print format for PDF generation
         fixed_file_url: URL of fixed file to send (for Fixed File message type)
+        mentions: List of numbers to @mention (group messages only)
+        mention_everyone: Mention all group members
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
@@ -387,7 +400,9 @@ def send_notification(phone, message, reference_doctype, reference_name,
             use_attachment=use_attachment,
             use_pdf=use_pdf,
             use_fixed_file=use_fixed_file,
-            fixed_file_url=fixed_file_url
+            fixed_file_url=fixed_file_url,
+            mentions=mentions,
+            mention_everyone=mention_everyone
         )
     else:
         # Handle text-only message
@@ -399,7 +414,9 @@ def send_notification(phone, message, reference_doctype, reference_name,
             notification_rule=notification_rule,
             recipient_name=recipient_name,
             formatted_phone=formatted_phone,
-            scheduled_time=scheduled_time
+            scheduled_time=scheduled_time,
+            mentions=mentions,
+            mention_everyone=mention_everyone
         )
 
         # Determine how to send
@@ -421,7 +438,8 @@ def send_notification(phone, message, reference_doctype, reference_name,
 def send_media_notification(phone, formatted_phone, message, reference_doctype, reference_name,
                             notification_rule, recipient_name, scheduled_time, settings,
                             print_format=None, use_attachment=False, use_pdf=False,
-                            use_fixed_file=False, fixed_file_url=None):
+                            use_fixed_file=False, fixed_file_url=None,
+                            mentions=None, mention_everyone=False):
     """
     Send a media notification (document PDF, attachment, or fixed file)
 
@@ -591,7 +609,9 @@ def send_media_notification(phone, formatted_phone, message, reference_doctype, 
             media_type=media_type,
             file_name=filename,
             file_size=file_size,
-            caption=message
+            caption=message,
+            mentions=mentions,
+            mention_everyone=mention_everyone
         )
 
         # Store media data temporarily
