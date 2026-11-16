@@ -17,6 +17,7 @@ class WhatsAppNotificationRule(Document):
         self.validate_document_type()
         self.validate_phone_field()
         self.validate_date_event()
+        self.validate_recurring()
         self.validate_template()
         self.validate_condition()
         self.validate_time_settings()
@@ -79,6 +80,50 @@ class WhatsAppNotificationRule(Document):
                 "<br>".join(warnings),
                 indicator="orange",
                 title=_("Field Validation Warnings")
+            )
+
+    def validate_recurring(self):
+        if self.event != "Recurring":
+            return
+
+        from whatsapp_notifications.whatsapp_notifications.recurring import parse_filters, get_matching_docnames
+
+        if not self.recurring_frequency:
+            frappe.throw(_("Frequency is required for Recurring rules"))
+        if self.recurring_frequency == "Weekly" and not self.recurring_day_of_week:
+            frappe.throw(_("Day of Week is required for Weekly frequency"))
+        if self.recurring_frequency == "Monthly":
+            if not self.recurring_day_of_month or not 1 <= self.recurring_day_of_month <= 31:
+                frappe.throw(_("Day of Month must be between 1 and 31"))
+        if (self.recurring_max_reminders or 0) < 0:
+            frappe.throw(_("Max Reminders cannot be negative"))
+
+        # Optional date field: must be a Date/Datetime when given
+        if self.date_field and self.document_type:
+            df = frappe.get_meta(self.document_type).get_field(self.date_field)
+            if not df or df.fieldtype not in ("Date", "Datetime"):
+                frappe.throw(_("Date Field '{}' must be a Date or Datetime field of {}").format(
+                    self.date_field, self.document_type))
+        if not self.date_field:
+            self.recurring_start_after_date = 0
+
+        # Filters: valid JSON and a query that actually runs
+        try:
+            parse_filters(self.recurring_filters)
+        except ValueError as e:
+            frappe.throw(_("Document Filters is not valid JSON: {}").format(e))
+        if self.document_type:
+            try:
+                get_matching_docnames(self, limit=1)
+            except frappe.ValidationError:
+                raise
+            except Exception as e:
+                frappe.throw(_("Document Filters could not be applied to {}: {}").format(self.document_type, e))
+
+        if not self.recurring_filters:
+            frappe.msgprint(
+                _("No Document Filters set: every {} will get a reminder on each run.").format(self.document_type),
+                indicator="orange", title=_("Recurring Rule")
             )
 
     def validate_date_event(self):
@@ -181,7 +226,11 @@ class WhatsAppNotificationRule(Document):
     def on_trash(self):
         clear_rules_cache()
 
-    def is_applicable(self, doc, event):
+    def _extra_context(self):
+        """Recurring run variables (reminder_number, days_overdue...) when set by the scheduler."""
+        return getattr(self, "_recurring_context", None) or {}
+
+    def is_applicable(self, doc, event, check_active_hours=True):
         if not self.enabled:
             return False
 
@@ -198,6 +247,7 @@ class WhatsAppNotificationRule(Document):
             "days_before": "Days Before",
             "days_after": "Days After",
             "on_same_day": "On Same Day",
+            "recurring": "Recurring",
         }
         if event_map.get(event) != self.event:
             return False
@@ -205,6 +255,7 @@ class WhatsAppNotificationRule(Document):
         if self.condition:
             try:
                 context = get_template_context(doc)
+                context.update(self._extra_context())
                 result = frappe.render_template(self.condition, context)
                 if isinstance(result, str):
                     result = result.strip().lower() not in ("", "false", "0", "none", "null")
@@ -222,10 +273,11 @@ class WhatsAppNotificationRule(Document):
             if watched and not self._has_watched_field_changed(doc, watched):
                 return False
 
-        if not self.is_within_active_hours():
+        if check_active_hours and not self.is_within_active_hours():
             return False
 
-        if self.send_once:
+        # Recurring rules repeat by design; their per-day de-duplication lives in recurring.py
+        if self.send_once and self.event != "Recurring":
             if has_sent_for_rule(self.name, doc.doctype, doc.name):
                 return False
 
@@ -403,6 +455,7 @@ class WhatsAppNotificationRule(Document):
             context["previous_values"] = {f: getattr(row_before, f, None) for f in cf} if row_before else {}
             context["row_before"] = row_before
             context["mentions"] = "" if for_owner else format_mentions(self.get_group_mentions(doc))
+            context.update(self._extra_context())
             return frappe.render_template(template, context)
         except Exception as e:
             frappe.log_error(
@@ -493,6 +546,10 @@ def _make_dummy_render_context():
     context["previous_values"] = {}
     context["row_before"] = None
     context["mentions"] = ""
+    context.update({
+        "reminder_number": 1, "reminders_sent": 0, "last_sent": None,
+        "days_overdue": 0, "days_until": 0,
+    })
     return context
 
 
@@ -768,6 +825,10 @@ def preview_message(rule_name, docname):
     doc = frappe.get_doc(rule.document_type, docname)
 
     from whatsapp_notifications.whatsapp_notifications.api import strip_mentions_from_text
+
+    if rule.event == "Recurring":
+        from whatsapp_notifications.whatsapp_notifications.recurring import get_recurring_context
+        rule._recurring_context = get_recurring_context(rule, doc)
 
     recipients = rule.get_recipients(doc)
     mentions = rule.get_group_mentions(doc)

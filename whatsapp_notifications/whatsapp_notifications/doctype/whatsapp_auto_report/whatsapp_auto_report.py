@@ -12,6 +12,44 @@ class WhatsAppAutoReport(Document):
     def validate(self):
         self.validate_filters()
         self.validate_schedule()
+        self.validate_source()
+
+    def is_document_list(self):
+        return self.source == "Document List"
+
+    def validate_source(self):
+        if not self.is_document_list():
+            if not self.report:
+                frappe.throw(_("Report is required"))
+            if not (self.recipients or "").strip():
+                frappe.throw(_("Recipients are required"))
+            return
+
+        from whatsapp_notifications.whatsapp_notifications import digest
+
+        if not self.list_doctype:
+            frappe.throw(_("Document Type is required for Document List"))
+        if not ((self.recipients or "").strip() or self.group_id or self.split_by_field):
+            frappe.throw(_("Add recipients, a WhatsApp group or a Split by field"))
+
+        try:
+            digest.parse_list_filters(self.list_filters)
+        except ValueError as e:
+            frappe.throw(_("Document Filters is not valid JSON: {}").format(e))
+
+        if self.split_by_field:
+            valid = [o["value"] for o in digest.get_split_options(self.list_doctype)]
+            if self.split_by_field not in valid:
+                frappe.throw(_("Split by field '{}' is not valid for {}").format(self.split_by_field, self.list_doctype))
+
+        # Dry-run the query and template so mistakes show up on save, not at 8 AM
+        try:
+            data = digest.get_digest_data(self)
+            digest.render_digest(self, data)
+        except frappe.ValidationError:
+            raise
+        except Exception as e:
+            frappe.throw(_("Document List could not be generated: {}").format(e))
 
     def validate_filters(self):
         """Validate JSON filters"""
@@ -153,9 +191,67 @@ class WhatsAppAutoReport(Document):
 
         return getdate(self.last_sent) == getdate(today())
 
+    def send_document_list(self):
+        """Document List source: full digest to recipients/group + personal digests."""
+        from whatsapp_notifications.whatsapp_notifications.digest import send_digest
+
+        result = send_digest(self)
+        self.db_set("last_sent", now_datetime())
+
+        if result["total"] == 0 and not result["errors"]:
+            self.db_set("last_status", "Skipped - No data")
+            frappe.db.commit()
+            return {"success": True, "skipped": True, "reason": _("No matching documents")}
+
+        if result["sent"] > 0:
+            self.db_set("last_status", "Sent to {} recipients".format(result["sent"]))
+            self.db_set("last_error", "\n".join(result["errors"][:5]) or None)
+        else:
+            self.db_set("last_status", "Failed")
+            self.db_set("last_error", "\n".join(result["errors"][:5]))
+        frappe.db.commit()
+
+        return {"success": result["sent"] > 0, "sent": result["sent"], "errors": result["errors"]}
+
+    @frappe.whitelist()
+    def preview_document_list(self):
+        """Every message the next run would send (nothing is sent)."""
+        from whatsapp_notifications.whatsapp_notifications.digest import build_digest_messages
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import _get_mention_names
+
+        if not self.is_document_list():
+            frappe.throw(_("Preview is only available for Document List"))
+
+        built = build_digest_messages(self, split_limit=10)
+        group_msg = next((m for m in built["messages"] if m["kind"] == "group"), None)
+        mention_names = {}
+        if group_msg and group_msg["mentions"]:
+            mention_names = _get_mention_names(frappe._dict(group_id=self.group_id), group_msg["mentions"])
+
+        return {
+            "messages": built["messages"],
+            "missing_phone": built["missing_phone"],
+            "split_total": built["split_total"],
+            "split_hidden": built["split_remaining"],
+            "mention_names": mention_names,
+        }
+
     @frappe.whitelist()
     def generate_and_send(self):
         """Generate report and send via WhatsApp"""
+        if self.is_document_list():
+            try:
+                return self.send_document_list()
+            except Exception as e:
+                self.db_set("last_status", "Error")
+                self.db_set("last_error", str(e)[:500])
+                frappe.db.commit()
+                frappe.log_error(
+                    message="Error sending document list {}: {}".format(self.name, str(e)),
+                    title="WhatsApp Auto Report Error"
+                )
+                return {"success": False, "error": str(e)}
+
         try:
             # Generate report data
             report_data = self.get_report_data()
@@ -658,6 +754,16 @@ def process_auto_reports():
                 message="Error checking auto report {}: {}".format(report_name, str(e)),
                 title="WhatsApp Auto Report Scheduler Error"
             )
+
+
+@frappe.whitelist()
+def get_split_options(doctype):
+    """Fields a Document List can be split by (for the form's Select)."""
+    from whatsapp_notifications.whatsapp_notifications.digest import get_split_options as _options
+    if not doctype:
+        return []
+    frappe.has_permission("WhatsApp Auto Report", "read", throw=True)
+    return _options(doctype)
 
 
 def send_auto_report(report_name):

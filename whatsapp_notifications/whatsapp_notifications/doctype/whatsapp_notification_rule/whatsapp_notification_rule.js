@@ -18,6 +18,16 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
                     notification_rule: frm.doc.name
                 });
             }, __('Actions'));
+
+            if (frm.doc.event === 'Recurring') {
+                frm.add_custom_button(__('Preview Recurring Run'), function () {
+                    show_recurring_preview(frm);
+                }, __('Actions'));
+
+                frm.add_custom_button(__('Run Now'), function () {
+                    run_recurring_now(frm);
+                }, __('Actions'));
+            }
         }
 
         setup_template_help(frm);
@@ -25,7 +35,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
 
         if (frm.doc.document_type) {
             setup_doctype_pickers(frm);
-            if (frm.doc.event === 'Days Before' || frm.doc.event === 'Days After') {
+            if (uses_date_field(frm.doc.event)) {
                 load_date_fields(frm);
             }
         }
@@ -53,16 +63,17 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         if (frm.doc.document_type) {
             setup_doctype_pickers(frm);
             load_child_table_options(frm);
-            if (frm.doc.event === 'Days Before' || frm.doc.event === 'Days After') {
+            if (uses_date_field(frm.doc.event)) {
                 load_date_fields(frm);
             }
         }
     },
 
     event: function (frm) {
-        if (frm.doc.event === 'Days Before' || frm.doc.event === 'Days After') {
+        if (uses_date_field(frm.doc.event)) {
             load_date_fields(frm);
         }
+        setup_template_help(frm);
         // Refresh value_changed picker visibility when event changes
         if (frm.doc.document_type) {
             destroy_chip_picker(frm, 'value_changed');
@@ -122,8 +133,16 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
 
     select_group_button: function (frm) {
         show_group_selection_dialog(frm);
+    },
+
+    edit_recurring_filters_button: function (frm) {
+        show_recurring_filters_dialog(frm);
     }
 });
+
+function uses_date_field(event) {
+    return ['Days Before', 'Days After', 'On Same Day', 'Recurring'].includes(event);
+}
 
 // ─── Chip Picker ──────────────────────────────────────────────────────────────
 
@@ -311,6 +330,14 @@ function setup_template_help(frm) {
                 <li><code>{{ format_date(doc.date_field) }}</code> — ${__('Formatted date')}</li>
                 <li><code>{{ format_currency(doc.amount, "USD") }}</code> — ${__('Formatted currency')}</li>
             </ul>
+            ${frm.doc.event === 'Recurring' ? `
+            <p class="text-muted small mb-1">${__('Recurring variables:')}</p>
+            <ul class="small mb-2">
+                <li><code>{{ reminder_number }}</code> — ${__('1 on the first reminder, 2 on the second...')}</li>
+                <li><code>{{ days_overdue }}</code> — ${__('Days since the Date Field (negative = not yet due)')}</li>
+                <li><code>{{ days_until }}</code> — ${__('Days until the Date Field')}</li>
+                <li><code>{{ last_sent }}</code> — ${__('When the previous reminder was sent (empty on the first)')}</li>
+            </ul>` : ''}
             <p class="text-muted small mb-1">${__('WhatsApp formatting:')}</p>
             <ul class="small mb-0">
                 <li><code>*bold*</code> | <code>_italic_</code> | <code>~strikethrough~</code></li>
@@ -324,63 +351,7 @@ function setup_template_help(frm) {
 // ─── Group Picker ─────────────────────────────────────────────────────────────
 
 function show_group_selection_dialog(frm) {
-    frappe.call({
-        method: 'whatsapp_notifications.whatsapp_notifications.api.fetch_whatsapp_groups',
-        freeze: true,
-        freeze_message: __('Fetching WhatsApp groups...'),
-        callback: function (r) {
-            if (r.message && r.message.success) {
-                let groups = r.message.groups;
-
-                if (!groups || groups.length === 0) {
-                    frappe.msgprint(__('No WhatsApp groups found. Make sure your WhatsApp is connected to groups.'));
-                    return;
-                }
-
-                let dialog = new frappe.ui.Dialog({
-                    title: __('Select WhatsApp Group'),
-                    fields: [
-                        {
-                            fieldname: 'group',
-                            fieldtype: 'Select',
-                            label: __('Group'),
-                            options: groups.map(g => g.id),
-                            reqd: 1
-                        }
-                    ],
-                    primary_action_label: __('Select'),
-                    primary_action: function (values) {
-                        let selected = groups.find(g => g.id === values.group);
-                        if (selected) {
-                            frm.set_value('group_id', selected.id);
-                            frm.set_value('group_name', selected.subject);
-                            dialog.hide();
-                            frappe.show_alert({ message: __('Group selected: ') + selected.subject, indicator: 'green' }, 3);
-                        }
-                    }
-                });
-
-                // Replace select options with labeled text
-                let $select = dialog.fields_dict.group.$input;
-                $select.empty();
-                groups.forEach(g => {
-                    $select.append($('<option></option>').val(g.id).text(`${g.subject} (${g.size} members)`));
-                });
-
-                if (frm.doc.group_id) {
-                    $select.val(frm.doc.group_id);
-                }
-
-                dialog.show();
-            } else {
-                frappe.msgprint({
-                    title: __('Error'),
-                    indicator: 'red',
-                    message: (r.message && r.message.error) || __('Failed to fetch WhatsApp groups')
-                });
-            }
-        }
-    });
+    frappe.whatsapp.pick_group(frm, { id_field: 'group_id', name_field: 'group_name' });
 }
 
 // ─── Group Member Mentions ────────────────────────────────────────────────────
@@ -391,96 +362,8 @@ function clear_group_mentions(frm) {
     if (frm.doc.group_mention_fields) frm.set_value('group_mention_fields', '');
 }
 
-function parse_number_list(value) {
-    return (value || '').split(/[\n,;\/]+/).map(v => v.replace(/\D/g, '')).filter(Boolean);
-}
-
 function show_mention_selection_dialog(frm) {
-    if (!frm.doc.group_id) {
-        frappe.msgprint(__('Select a WhatsApp group first.'));
-        return;
-    }
-
-    frappe.call({
-        method: 'whatsapp_notifications.whatsapp_notifications.api.fetch_group_participants',
-        args: { group_id: frm.doc.group_id },
-        freeze: true,
-        freeze_message: __('Fetching group members...'),
-        callback: function (r) {
-            if (!r.message || !r.message.success) {
-                frappe.msgprint({
-                    title: __('Error'),
-                    indicator: 'red',
-                    message: (r.message && r.message.error) || __('Failed to fetch group members')
-                });
-                return;
-            }
-
-            let participants = r.message.participants || [];
-            if (!participants.length) {
-                frappe.msgprint(__('No taggable members found in this group.'));
-                return;
-            }
-
-            // Match saved numbers by suffix so "841234567" and "258841234567" are the same member
-            let current = parse_number_list(frm.doc.group_mentions);
-            let is_selected = n => current.some(c => n === c || n.endsWith(c) || c.endsWith(n));
-            let known = new Set();
-
-            let options = participants.map(p => {
-                if (is_selected(p.number)) known.add(p.number);
-                let label = p.name ? `${p.name} (+${p.number})` : `+${p.number}`;
-                if (p.admin) label += ` — ${__('admin')}`;
-                return { label: label, value: p.number, checked: is_selected(p.number) ? 1 : 0 };
-            });
-
-            // Numbers saved on the rule that are no longer in the group
-            let orphans = current.filter(c => !participants.some(p => p.number === c || p.number.endsWith(c) || c.endsWith(p.number)));
-
-            let fields = [
-                { fieldname: 'search', fieldtype: 'Data', label: __('Search'), placeholder: __('Filter by name or number') },
-                { fieldname: 'members', fieldtype: 'MultiCheck', label: __('Members'), columns: 1, options: options }
-            ];
-            if (orphans.length) {
-                fields.push({
-                    fieldname: 'orphans_html', fieldtype: 'HTML',
-                    options: `<p class="text-muted small">${__('Kept (not found in group)')}: ${frappe.utils.escape_html(orphans.join(', '))}</p>`
-                });
-            }
-            if (r.message.hidden) {
-                fields.push({
-                    fieldname: 'hidden_html', fieldtype: 'HTML',
-                    options: `<p class="text-muted small">${__('{0} member(s) hide their phone number and cannot be tagged by number.', [r.message.hidden])}</p>`
-                });
-            }
-
-            let dialog = new frappe.ui.Dialog({
-                title: __('Tag Members of {0}', [frm.doc.group_name || frm.doc.group_id]),
-                fields: fields,
-                size: 'large',
-                primary_action_label: __('Save Selection'),
-                primary_action: function () {
-                    let selected = dialog.fields_dict.members.get_checked_options();
-                    frm.set_value('group_mentions', orphans.concat(selected).join('\n'));
-                    dialog.hide();
-                    frappe.show_alert({ message: __('{0} member(s) will be tagged', [orphans.length + selected.length]), indicator: 'green' }, 3);
-                },
-                secondary_action_label: __('Clear All'),
-                secondary_action: function () {
-                    dialog.fields_dict.members.$wrapper.find('input[type=checkbox]').prop('checked', false);
-                }
-            });
-
-            dialog.fields_dict.search.$input.on('input', function () {
-                let q = ($(this).val() || '').toLowerCase().trim();
-                dialog.fields_dict.members.$wrapper.find('.checkbox').each(function () {
-                    $(this).toggle(!q || $(this).text().toLowerCase().includes(q));
-                });
-            });
-
-            dialog.show();
-        }
-    });
+    frappe.whatsapp.pick_group_members(frm, { group_field: 'group_id', group_name_field: 'group_name', mentions_field: 'group_mentions' });
 }
 
 // ─── Preview ──────────────────────────────────────────────────────────────────
@@ -580,11 +463,123 @@ function render_preview(frm, docname, dialog) {
 // Escape the message and render '@<number>' tags the way WhatsApp shows them:
 // highlighted, with the member's name when known (number kept in the tooltip).
 function render_message_with_tags(message, names) {
-    let html = frappe.utils.escape_html(message || '');
-    return html.replace(/@(\d{6,15})(?!\d)/g, function (match, number) {
-        let name = names[number];
-        let label = name ? '@' + frappe.utils.escape_html(name) : match;
-        return `<span title="+${number}" style="color:#027eb5;font-weight:500;">${label}</span>`;
+    return frappe.whatsapp.render_tags(message, names);
+}
+
+// ─── Recurring ────────────────────────────────────────────────────────────────
+
+const WNR_RECURRING = 'whatsapp_notifications.whatsapp_notifications.recurring';
+
+function show_recurring_filters_dialog(frm) {
+    frappe.whatsapp.edit_filters(frm, {
+        doctype: frm.doc.document_type,
+        field: 'recurring_filters',
+        title: __('Which {0} documents get a reminder?', [__(frm.doc.document_type || '')])
+    });
+}
+
+function show_recurring_preview(frm) {
+    if (frm.is_dirty()) {
+        frappe.msgprint(__('Please save the rule before previewing.'));
+        return;
+    }
+
+    frappe.call({
+        method: WNR_RECURRING + '.preview_recurring_run',
+        args: { rule_name: frm.doc.name, limit: 10 },
+        freeze: true,
+        freeze_message: __('Working out the next run...'),
+        callback: function (r) {
+            if (!r.message) return;
+            let p = r.message;
+            let esc = frappe.utils.escape_html;
+            let fmt_dt = v => v ? frappe.datetime.str_to_user(v) : '—';
+
+            let schedule = `
+                <div class="row mb-3">
+                    <div class="col-sm-3"><div class="text-muted small">${__('Schedule')}</div>
+                        <div>${esc(__(p.frequency))} ${__('at')} ${esc(p.send_time)}${p.uses_global_time ? ` <span class="text-muted small">(${__('global')})</span>` : ''}</div></div>
+                    <div class="col-sm-3"><div class="text-muted small">${__('Next run')}</div><div>${fmt_dt(p.next_run)}</div></div>
+                    <div class="col-sm-3"><div class="text-muted small">${__('Last run')}</div><div>${fmt_dt(p.last_run)}</div></div>
+                    <div class="col-sm-3"><div class="text-muted small">${__('Documents')}</div>
+                        <div><b>${p.to_send_count}</b> ${__('to send')} · ${p.skipped_count} ${__('skipped')} · ${p.matched} ${__('matched')}</div></div>
+                </div>`;
+
+            let items = p.items.length ? p.items.map(it => `
+                <div class="mb-3 p-2 border rounded">
+                    <div class="small mb-1 d-flex flex-wrap" style="gap:12px;">
+                        <a href="/app/${frappe.router.slug(frm.doc.document_type)}/${encodeURIComponent(it.docname)}" target="_blank"><b>${esc(it.docname)}</b></a>
+                        <span class="indicator-pill ${it.reminder_number > 1 ? 'orange' : 'blue'}">${__('Reminder #{0}', [it.reminder_number])}</span>
+                        ${it.days_overdue !== null && it.days_overdue !== undefined ? `<span class="text-muted">${it.days_overdue >= 0 ? __('{0} days overdue', [it.days_overdue]) : __('due in {0} days', [-it.days_overdue])}</span>` : ''}
+                        ${it.last_sent ? `<span class="text-muted">${__('last sent')} ${fmt_dt(it.last_sent)}</span>` : ''}
+                    </div>
+                    <div class="text-muted small mb-1">${__('To')}: ${esc(it.recipients.join(', ') || __('No recipients found'))}</div>
+                    <div style="background:#DCF8C6;padding:8px;border-radius:6px;white-space:pre-wrap;font-family:system-ui,sans-serif;">${render_message_with_tags(it.message || '', p.mention_names || {})}</div>
+                </div>`).join('')
+                : `<p class="text-muted">${__('Nothing to send on the next run.')}</p>`;
+
+            let more = p.to_send_count > p.items.length
+                ? `<p class="text-muted small">${__('…and {0} more', [p.to_send_count - p.items.length])}</p>` : '';
+
+            let skipped = p.skipped.length ? `
+                <details class="mt-2"><summary class="text-muted small">${__('Skipped documents')} (${p.skipped_count})</summary>
+                    <table class="table table-sm small mt-2"><tbody>
+                        ${p.skipped.map(s => `<tr><td>${esc(s.docname)}</td><td class="text-muted">${esc(s.reason)}</td></tr>`).join('')}
+                    </tbody></table>
+                </details>` : '';
+
+            let dialog = new frappe.ui.Dialog({
+                title: __('Recurring Run Preview'),
+                size: 'large',
+                fields: [{ fieldtype: 'HTML', fieldname: 'preview_html' }],
+                primary_action_label: __('Run Now'),
+                primary_action: function () {
+                    dialog.hide();
+                    run_recurring_now(frm, p.to_send_count);
+                }
+            });
+            dialog.fields_dict.preview_html.$wrapper.html(schedule + items + more + skipped);
+            if (!p.to_send_count) dialog.get_primary_btn().prop('disabled', true);
+            dialog.show();
+        }
+    });
+}
+
+function run_recurring_now(frm, known_count) {
+    let confirm_and_run = function (count) {
+        if (!count) {
+            frappe.msgprint(__('No documents to remind right now.'));
+            return;
+        }
+        frappe.confirm(
+            __('Send {0} reminder(s) now? Documents already reminded today are skipped.', [count]),
+            function () {
+                frappe.call({
+                    method: WNR_RECURRING + '.run_recurring_rule_now',
+                    args: { rule_name: frm.doc.name },
+                    callback: function (r) {
+                        if (r.message && r.message.queued) {
+                            frappe.show_alert({ message: __('Reminders queued. Check View Logs for progress.'), indicator: 'green' }, 5);
+                        }
+                    }
+                });
+            }
+        );
+    };
+
+    if (known_count !== undefined) {
+        confirm_and_run(known_count);
+        return;
+    }
+    if (frm.is_dirty()) {
+        frappe.msgprint(__('Please save the rule first.'));
+        return;
+    }
+    frappe.call({
+        method: WNR_RECURRING + '.preview_recurring_run',
+        args: { rule_name: frm.doc.name, limit: 1 },
+        freeze: true,
+        callback: r => r.message && confirm_and_run(r.message.to_send_count)
     });
 }
 

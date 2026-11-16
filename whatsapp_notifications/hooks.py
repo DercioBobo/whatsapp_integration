@@ -120,7 +120,10 @@ scheduler_events = {
     # Run every minute to process pending messages
     "cron": {
         "* * * * *": [
-            "whatsapp_notifications.whatsapp_notifications.tasks.process_pending_messages"
+            "whatsapp_notifications.whatsapp_notifications.tasks.process_pending_messages",
+            # Recurring rules: cheap due-check; due rules are enqueued once per day
+            # at each rule's own send time
+            "whatsapp_notifications.whatsapp_notifications.recurring.process_recurring_rules"
         ],
         # Retry failed messages every 5 minutes
         "*/5 * * * *": [

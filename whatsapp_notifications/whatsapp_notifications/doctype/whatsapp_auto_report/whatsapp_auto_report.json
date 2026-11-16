@@ -9,12 +9,22 @@
         "enabled",
         "report_name",
         "section_report",
+        "source",
         "report",
         "report_type",
         "column_break_report",
         "user",
         "filters",
         "dynamic_filters",
+        "section_document_list",
+        "list_doctype",
+        "list_filters",
+        "edit_list_filters_button",
+        "column_break_document_list",
+        "list_order_by",
+        "list_limit",
+        "split_by_field",
+        "split_phone_field",
         "section_schedule",
         "frequency",
         "day_of_week",
@@ -23,9 +33,15 @@
         "send_time",
         "section_recipients",
         "recipients",
+        "group_id",
+        "group_name",
+        "select_group_button",
         "column_break_recipients",
         "no_of_rows",
         "send_if_data",
+        "mention_everyone",
+        "group_mentions",
+        "select_mentions_button",
         "section_format",
         "format",
         "include_pdf",
@@ -63,12 +79,21 @@
             "label": "Report Configuration"
         },
         {
+            "fieldname": "source",
+            "fieldtype": "Select",
+            "label": "Source",
+            "options": "Report\nDocument List",
+            "default": "Report",
+            "description": "Report: send a saved Frappe report. Document List: send a text list of documents (e.g. pending invoices), optionally one message per person."
+        },
+        {
             "fieldname": "report",
             "fieldtype": "Link",
             "in_list_view": 1,
             "label": "Report",
             "options": "Report",
-            "reqd": 1
+            "depends_on": "eval:doc.source!='Document List'",
+            "mandatory_depends_on": "eval:doc.source!='Document List'"
         },
         {
             "fieldname": "report_type",
@@ -76,7 +101,8 @@
             "label": "Report Type",
             "options": "Report Builder\nQuery Report\nScript Report",
             "read_only": 1,
-            "fetch_from": "report.report_type"
+            "fetch_from": "report.report_type",
+            "depends_on": "eval:doc.source!='Document List'"
         },
         {
             "fieldname": "column_break_report",
@@ -88,20 +114,85 @@
             "label": "Run As User",
             "options": "User",
             "description": "Report will be generated with this user's permissions",
-            "default": "Administrator"
+            "default": "Administrator",
+            "depends_on": "eval:doc.source!='Document List'"
         },
         {
             "fieldname": "filters",
             "fieldtype": "Code",
             "label": "Filters (JSON)",
             "options": "JSON",
-            "description": "Report filters in JSON format. Example: {\"company\": \"My Company\"}"
+            "description": "Report filters in JSON format. Example: {\"company\": \"My Company\"}",
+            "depends_on": "eval:doc.source!='Document List'"
         },
         {
             "fieldname": "dynamic_filters",
             "fieldtype": "Small Text",
             "label": "Dynamic Date Filters",
-            "description": "Use: today, yesterday, this_week, last_week, this_month, last_month, this_quarter, last_quarter, this_year, last_year"
+            "description": "Use: today, yesterday, this_week, last_week, this_month, last_month, this_quarter, last_quarter, this_year, last_year",
+            "depends_on": "eval:doc.source!='Document List'"
+        },
+        {
+            "fieldname": "section_document_list",
+            "fieldtype": "Section Break",
+            "label": "Document List",
+            "depends_on": "eval:doc.source=='Document List'"
+        },
+        {
+            "fieldname": "list_doctype",
+            "fieldtype": "Link",
+            "label": "Document Type",
+            "options": "DocType",
+            "depends_on": "eval:doc.source=='Document List'",
+            "mandatory_depends_on": "eval:doc.source=='Document List'"
+        },
+        {
+            "fieldname": "list_filters",
+            "fieldtype": "Code",
+            "label": "Document Filters",
+            "options": "JSON",
+            "depends_on": "eval:doc.source=='Document List'",
+            "description": "Frappe filters. Example: [[\"docstatus\",\"=\",1],[\"outstanding_amount\",\">\",0]]. Timespans work too: [\"posting_date\",\"Timespan\",\"this month\"]"
+        },
+        {
+            "fieldname": "edit_list_filters_button",
+            "fieldtype": "Button",
+            "label": "Edit Filters",
+            "depends_on": "eval:doc.source=='Document List'"
+        },
+        {
+            "fieldname": "column_break_document_list",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "list_order_by",
+            "fieldtype": "Data",
+            "label": "Sort By",
+            "default": "creation desc",
+            "depends_on": "eval:doc.source=='Document List'",
+            "description": "e.g. due_date asc, outstanding_amount desc"
+        },
+        {
+            "fieldname": "list_limit",
+            "fieldtype": "Int",
+            "label": "Documents Listed per Message",
+            "default": "20",
+            "depends_on": "eval:doc.source=='Document List'",
+            "description": "The rest are counted as '…and N more'. Totals always cover every matching document."
+        },
+        {
+            "fieldname": "split_by_field",
+            "fieldtype": "Select",
+            "label": "Split by (one message per person)",
+            "depends_on": "eval:doc.source=='Document List'",
+            "description": "Each person gets only their own documents, sent to the phone on their record (User, Employee, Sales Person, Customer...)."
+        },
+        {
+            "fieldname": "split_phone_field",
+            "fieldtype": "Data",
+            "label": "Phone Field on Linked Record",
+            "depends_on": "eval:doc.source=='Document List' && doc.split_by_field",
+            "description": "Optional. Leave empty to auto-detect (mobile_no, cell_number, phone...)."
         },
         {
             "fieldname": "section_schedule",
@@ -155,8 +246,28 @@
             "fieldname": "recipients",
             "fieldtype": "Small Text",
             "label": "Recipients",
-            "reqd": 1,
-            "description": "WhatsApp phone numbers (one per line)"
+            "description": "WhatsApp phone numbers (one per line). With Document List they receive the full list."
+        },
+        {
+            "fieldname": "group_id",
+            "fieldtype": "Data",
+            "label": "WhatsApp Group ID",
+            "read_only": 1,
+            "depends_on": "eval:doc.source=='Document List'",
+            "description": "The group receives the full list"
+        },
+        {
+            "fieldname": "group_name",
+            "fieldtype": "Data",
+            "label": "Group Name",
+            "read_only": 1,
+            "depends_on": "eval:doc.group_id"
+        },
+        {
+            "fieldname": "select_group_button",
+            "fieldtype": "Button",
+            "label": "Select Group",
+            "depends_on": "eval:doc.source=='Document List'"
         },
         {
             "fieldname": "column_break_recipients",
@@ -167,7 +278,8 @@
             "fieldtype": "Int",
             "label": "Max Rows",
             "default": "500",
-            "description": "Maximum rows to include in report (0 = unlimited)"
+            "description": "Maximum rows to include in report (0 = unlimited)",
+            "depends_on": "eval:doc.source!='Document List'"
         },
         {
             "fieldname": "send_if_data",
@@ -177,9 +289,30 @@
             "description": "Only send if the report returns data"
         },
         {
+            "default": "0",
+            "fieldname": "mention_everyone",
+            "fieldtype": "Check",
+            "label": "Tag Everyone in Group",
+            "depends_on": "eval:doc.source=='Document List' && doc.group_id"
+        },
+        {
+            "fieldname": "group_mentions",
+            "fieldtype": "Small Text",
+            "label": "Members to Tag",
+            "depends_on": "eval:doc.source=='Document List' && doc.group_id",
+            "description": "Phone numbers to tag in the group message (one per line)"
+        },
+        {
+            "fieldname": "select_mentions_button",
+            "fieldtype": "Button",
+            "label": "Select Members to Tag",
+            "depends_on": "eval:doc.source=='Document List' && doc.group_id"
+        },
+        {
             "fieldname": "section_format",
             "fieldtype": "Section Break",
-            "label": "Format & Attachments"
+            "label": "Format & Attachments",
+            "depends_on": "eval:doc.source!='Document List'"
         },
         {
             "fieldname": "format",
@@ -222,14 +355,15 @@
             "fieldtype": "Code",
             "label": "Message Template",
             "options": "Jinja",
-            "description": "Jinja2 template. Variables: {{ report_name }}, {{ date }}, {{ rows }}, {{ summary }}"
+            "description": "Jinja2 template. Report: {{ report_name }}, {{ date }}, {{ rows }}, {{ summary }}. Document List: {{ docs }}, {{ count }}, {{ more }}, {{ total('field') }}, {{ recipient_name }}, {{ link }}, {{ mentions }}. Leave empty for a default message."
         },
         {
             "fieldname": "include_summary",
             "fieldtype": "Check",
             "label": "Include Data Summary in Message",
             "default": "1",
-            "description": "Include first few rows as text in the message"
+            "description": "Include first few rows as text in the message",
+            "depends_on": "eval:doc.source!='Document List'"
         },
         {
             "fieldname": "include_link",
@@ -265,7 +399,7 @@
     ],
     "index_web_pages_for_search": 1,
     "links": [],
-    "modified": "2024-01-01 00:00:00.000000",
+    "modified": "2026-11-16 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Auto Report",

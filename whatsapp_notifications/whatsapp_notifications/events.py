@@ -663,6 +663,7 @@ def get_event_name(event_label):
         "Days Before": "days_before",
         "Days After": "days_after",
         "On Same Day": "on_same_day",
+        "Recurring": "recurring",
     }
     return event_map.get(event_label, event_label.lower().replace(" ", "_"))
 

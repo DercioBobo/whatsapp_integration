@@ -163,7 +163,8 @@ def send_whatsapp(phone, message, doctype=None, docname=None, queue=True):
 
 
 def send_whatsapp_notification(phone, message, reference_doctype=None, reference_name=None,
-                               notification_rule=None, recipient_name=None):
+                               notification_rule=None, recipient_name=None,
+                               mentions=None, mention_everyone=False):
     """
     Internal function to send WhatsApp notification
     Called by event handlers and scheduled tasks
@@ -175,15 +176,18 @@ def send_whatsapp_notification(phone, message, reference_doctype=None, reference
         reference_name: Source document name
         notification_rule: Triggering rule name
         recipient_name: Recipient display name
-    
+        mentions: Numbers to @mention (group recipients only)
+        mention_everyone: Mention all group members
+
     Returns:
         dict: Result with success status
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_message_log.whatsapp_message_log import create_message_log
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
-    
+
     settings = get_settings()
+    is_group = is_group_id(phone)
 
     if not settings.get("enabled"):
         return {"success": False, "error": "WhatsApp notifications disabled"}
@@ -205,9 +209,11 @@ def send_whatsapp_notification(phone, message, reference_doctype=None, reference
         reference_name=reference_name,
         notification_rule=notification_rule,
         recipient_name=recipient_name,
-        formatted_phone=formatted_phone
+        formatted_phone=formatted_phone,
+        mentions=mentions if is_group else None,
+        mention_everyone=bool(mention_everyone) and is_group
     )
-    
+
     # Queue or send immediately based on settings
     if settings.get("queue_enabled"):
         return {"success": True, "queued": True, "log": log.name}

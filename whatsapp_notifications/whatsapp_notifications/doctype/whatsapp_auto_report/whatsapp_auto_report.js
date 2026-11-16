@@ -42,9 +42,18 @@ frappe.ui.form.on('WhatsApp Auto Report', {
             }, __('Ações'));
 
             frm.add_custom_button(__('Pré-visualizar'), function () {
-                show_preview_dialog(frm);
+                if (frm.doc.source === 'Document List') {
+                    show_document_list_preview(frm);
+                } else {
+                    show_preview_dialog(frm);
+                }
             }, __('Ações'));
         }
+
+        if (frm.doc.source === 'Document List' && frm.doc.list_doctype) {
+            load_split_options(frm);
+        }
+        frm._last_group_id = frm.doc.group_id;
 
         // Show last status indicator
         if (frm.doc.last_status) {
@@ -64,8 +73,106 @@ frappe.ui.form.on('WhatsApp Auto Report', {
     report: function (frm) {
         // Clear filters when report changes
         frm.set_value('filters', '');
+    },
+
+    source: function (frm) {
+        if (frm.doc.source === 'Document List' && frm.doc.list_doctype) {
+            load_split_options(frm);
+        }
+    },
+
+    list_doctype: function (frm) {
+        frm.set_value('list_filters', '');
+        frm.set_value('split_by_field', '');
+        frm.set_value('split_phone_field', '');
+        if (frm.doc.list_doctype) {
+            load_split_options(frm);
+        }
+    },
+
+    edit_list_filters_button: function (frm) {
+        frappe.whatsapp.edit_filters(frm, {
+            doctype: frm.doc.list_doctype,
+            field: 'list_filters',
+            title: __('Que documentos de {0} incluir?', [__(frm.doc.list_doctype || '')])
+        });
+    },
+
+    select_group_button: function (frm) {
+        frappe.whatsapp.pick_group(frm, { id_field: 'group_id', name_field: 'group_name' });
+    },
+
+    select_mentions_button: function (frm) {
+        frappe.whatsapp.pick_group_members(frm, {
+            group_field: 'group_id', group_name_field: 'group_name', mentions_field: 'group_mentions'
+        });
+    },
+
+    group_id: function (frm) {
+        // Members picked for a previous group don't belong to the new one
+        if (frm.doc.group_mentions && frm._last_group_id && frm._last_group_id !== frm.doc.group_id) {
+            frm.set_value('group_mentions', '');
+            frappe.show_alert({ message: __('Grupo alterado: membros marcados foram limpos'), indicator: 'orange' }, 4);
+        }
+        frm._last_group_id = frm.doc.group_id;
     }
 });
+
+// ─── Document List ────────────────────────────────────────────────────────────
+
+function load_split_options(frm) {
+    frappe.call({
+        method: 'whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_auto_report.whatsapp_auto_report.get_split_options',
+        args: { doctype: frm.doc.list_doctype },
+        callback: function (r) {
+            let options = [{ label: __('— Não dividir —'), value: '' }].concat(r.message || []);
+            frm.set_df_property('split_by_field', 'options', options);
+            frm.refresh_field('split_by_field');
+        }
+    });
+}
+
+function show_document_list_preview(frm) {
+    frm.call({
+        method: 'preview_document_list',
+        doc: frm.doc,
+        freeze: true,
+        freeze_message: __('A gerar pré-visualização...'),
+        callback: function (r) {
+            if (!r.message) return;
+            let p = r.message;
+            let esc = frappe.utils.escape_html;
+            let kind_label = { fixed: __('Destinatário'), group: __('Grupo'), person: __('Pessoal') };
+            let kind_color = { fixed: 'blue', group: 'green', person: 'orange' };
+
+            let body = p.messages.length ? p.messages.map(m => `
+                <div class="mb-3 p-2 border rounded">
+                    <div class="small mb-1 d-flex flex-wrap align-items-center" style="gap:10px;">
+                        <span class="indicator-pill ${kind_color[m.kind]}">${kind_label[m.kind]}</span>
+                        <b>${esc(m.label)}</b>
+                        <span class="text-muted">${__('{0} documento(s)', [m.count])}</span>
+                        ${m.mention_everyone ? `<span class="indicator-pill blue">${__('Marca todos')}</span>` : ''}
+                    </div>
+                    <div style="background:#DCF8C6;padding:8px;border-radius:6px;white-space:pre-wrap;font-family:system-ui,sans-serif;">${frappe.whatsapp.render_tags(m.message || '', p.mention_names || {})}</div>
+                </div>`).join('')
+                : `<p class="text-muted">${__('Nada a enviar: nenhum documento corresponde aos filtros.')}</p>`;
+
+            if (p.split_hidden) {
+                body += `<p class="text-muted small">${__('…e mais {0} mensagem(ns) pessoal(is)', [p.split_hidden])}</p>`;
+            }
+            if (p.missing_phone.length) {
+                body += `<div class="alert alert-warning small mt-2">${__('Sem número de telefone (não receberão)')}: ${esc(p.missing_phone.join(', '))}</div>`;
+            }
+
+            let total = p.messages.length + (p.split_hidden || 0);
+            frappe.msgprint({
+                title: __('Pré-visualização · {0} mensagem(ns)', [total]),
+                message: body,
+                wide: true
+            });
+        }
+    });
+}
 
 function show_preview_dialog(frm) {
     frappe.call({

@@ -16,6 +16,18 @@
         "value_changed",
         "days_offset",
         "date_field",
+        "section_recurring",
+        "recurring_frequency",
+        "recurring_day_of_week",
+        "recurring_day_of_month",
+        "recurring_send_time",
+        "recurring_max_reminders",
+        "column_break_recurring",
+        "recurring_filters",
+        "edit_recurring_filters_button",
+        "recurring_start_after_date",
+        "recurring_start_days",
+        "recurring_last_run",
         "section_recipient",
         "recipient_type",
         "use_child_table",
@@ -94,7 +106,7 @@
             "fieldtype": "Select",
             "in_list_view": 1,
             "label": "Event",
-            "options": "After Insert\nOn Update\nOn Submit\nOn Cancel\nOn Change\nOn Trash\nDays Before\nDays After\nOn Same Day",
+            "options": "After Insert\nOn Update\nOn Submit\nOn Cancel\nOn Change\nOn Trash\nDays Before\nDays After\nOn Same Day\nRecurring",
             "reqd": 1,
             "default": "After Insert"
         },
@@ -128,9 +140,98 @@
             "fieldname": "date_field",
             "fieldtype": "Select",
             "label": "Date Field",
-            "description": "Date or Datetime field to use for scheduling",
-            "depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After' || doc.event=='On Same Day'",
+            "description": "Date or Datetime field to use for scheduling. For Recurring it is optional and powers {{ days_overdue }} and 'Only After Date Field'.",
+            "depends_on": "eval:['Days Before','Days After','On Same Day','Recurring'].includes(doc.event)",
             "mandatory_depends_on": "eval:doc.event=='Days Before' || doc.event=='Days After' || doc.event=='On Same Day'"
+        },
+        {
+            "fieldname": "section_recurring",
+            "fieldtype": "Section Break",
+            "label": "Recurring Schedule",
+            "depends_on": "eval:doc.event=='Recurring'",
+            "description": "Sends one message per matching document on every run. Reminders stop by themselves once a document no longer matches the filters (e.g. the invoice is paid)."
+        },
+        {
+            "fieldname": "recurring_frequency",
+            "fieldtype": "Select",
+            "label": "Frequency",
+            "options": "Daily\nWeekly\nMonthly",
+            "default": "Daily",
+            "depends_on": "eval:doc.event=='Recurring'",
+            "mandatory_depends_on": "eval:doc.event=='Recurring'"
+        },
+        {
+            "fieldname": "recurring_day_of_week",
+            "fieldtype": "Select",
+            "label": "Day of Week",
+            "options": "\nMonday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday",
+            "depends_on": "eval:doc.event=='Recurring' && doc.recurring_frequency=='Weekly'",
+            "mandatory_depends_on": "eval:doc.event=='Recurring' && doc.recurring_frequency=='Weekly'"
+        },
+        {
+            "fieldname": "recurring_day_of_month",
+            "fieldtype": "Int",
+            "label": "Day of Month",
+            "description": "1-31. Days beyond the month's end run on its last day (e.g. 31 runs on Feb 28).",
+            "depends_on": "eval:doc.event=='Recurring' && doc.recurring_frequency=='Monthly'",
+            "mandatory_depends_on": "eval:doc.event=='Recurring' && doc.recurring_frequency=='Monthly'"
+        },
+        {
+            "fieldname": "recurring_send_time",
+            "fieldtype": "Time",
+            "label": "Send Time",
+            "description": "Server time. Leave empty to use the Scheduled Rules Run Hour from Evolution API Settings.",
+            "depends_on": "eval:doc.event=='Recurring'"
+        },
+        {
+            "fieldname": "recurring_max_reminders",
+            "fieldtype": "Int",
+            "label": "Max Reminders per Document",
+            "default": "0",
+            "description": "Stop after this many reminders for the same document. 0 = no limit.",
+            "depends_on": "eval:doc.event=='Recurring'"
+        },
+        {
+            "fieldname": "column_break_recurring",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "recurring_filters",
+            "fieldtype": "Code",
+            "label": "Document Filters",
+            "options": "JSON",
+            "description": "Which documents get a reminder, as Frappe filters. Example: [[\"docstatus\",\"=\",1],[\"outstanding_amount\",\">\",0]]",
+            "depends_on": "eval:doc.event=='Recurring'"
+        },
+        {
+            "fieldname": "edit_recurring_filters_button",
+            "fieldtype": "Button",
+            "label": "Edit Filters",
+            "depends_on": "eval:doc.event=='Recurring'"
+        },
+        {
+            "default": "0",
+            "fieldname": "recurring_start_after_date",
+            "fieldtype": "Check",
+            "label": "Only After Date Field",
+            "description": "Only remind once the Date Field (plus the offset below) has been reached, e.g. only overdue invoices.",
+            "depends_on": "eval:doc.event=='Recurring' && doc.date_field"
+        },
+        {
+            "fieldname": "recurring_start_days",
+            "fieldtype": "Int",
+            "label": "Start Offset (Days)",
+            "default": "0",
+            "description": "Days after the Date Field to start reminding. Negative = start before it (e.g. -3 = three days before due).",
+            "depends_on": "eval:doc.event=='Recurring' && doc.date_field && doc.recurring_start_after_date"
+        },
+        {
+            "fieldname": "recurring_last_run",
+            "fieldtype": "Datetime",
+            "label": "Last Run",
+            "read_only": 1,
+            "no_copy": 1,
+            "depends_on": "eval:doc.event=='Recurring' && doc.recurring_last_run"
         },
         {
             "fieldname": "section_recipient",
@@ -390,7 +491,8 @@
             "fieldname": "send_once",
             "fieldtype": "Check",
             "label": "Send Only Once Per Document",
-            "description": "Don't send again if this rule already sent for this document"
+            "description": "Don't send again if this rule already sent for this document",
+            "depends_on": "eval:doc.event!='Recurring'"
         },
         {
             "fieldname": "active_days",
@@ -432,7 +534,7 @@
             "link_fieldname": "notification_rule"
         }
     ],
-    "modified": "2026-11-16 00:00:00.000000",
+    "modified": "2026-11-16 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Notification Rule",
