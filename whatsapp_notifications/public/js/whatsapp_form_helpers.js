@@ -306,3 +306,163 @@ frappe.whatsapp.edit_filters = function(frm, opts) {
         dialog.show();
     });
 };
+
+// ============================================================
+// Template helper: insert fields, ready-made snippets and
+// variables into a Jinja message template with one click.
+// ============================================================
+
+frappe.whatsapp.LAYOUT_TYPES = ['Section Break', 'Column Break', 'Tab Break', 'HTML', 'Button', 'Fold', 'Heading',
+    'Image', 'Attach', 'Attach Image', 'Signature', 'Geolocation', 'Password', 'Barcode'];
+frappe.whatsapp.NUMERIC_TYPES = ['Currency', 'Float', 'Int', 'Percent'];
+
+/** Jinja expression for a field, formatted by its type. `obj` is "doc", "d", "row"... */
+frappe.whatsapp.field_expr = function(df, obj, meta) {
+    let ref = `${obj}.${df.fieldname}`;
+    if (df.fieldtype === 'Currency') {
+        let cur = meta && meta.fields.some(f => f.fieldname === 'currency') ? `, ${obj}.currency` : '';
+        return `{{ format_currency(${ref}${cur}) }}`;
+    }
+    if (df.fieldtype === 'Date') return `{{ format_date(${ref}) }}`;
+    if (df.fieldtype === 'Datetime') return `{{ format_datetime(${ref}) }}`;
+    if (df.fieldtype === 'Check') return `{{ "✅" if ${ref} else "❌" }}`;
+    return `{{ ${ref} }}`;
+};
+
+/** Best "title" field: title_field, then common name fields, then name. */
+frappe.whatsapp.guess_title_field = function(meta) {
+    let has = f => meta.fields.some(x => x.fieldname === f);
+    if (meta.title_field && meta.title_field !== 'name' && has(meta.title_field)) return meta.title_field;
+    return ['customer_name', 'supplier_name', 'employee_name', 'party_name', 'applicant_name',
+        'full_name', 'title', 'subject', 'item_name'].find(has) || null;
+};
+
+/** Best amount field: outstanding first (what reminders care about), then totals, then any currency. */
+frappe.whatsapp.guess_amount_field = function(meta) {
+    let has = f => meta.fields.some(x => x.fieldname === f);
+    return ['outstanding_amount', 'total_amount', 'grand_total', 'rounded_total', 'amount', 'loan_amount', 'total']
+        .find(has) || (meta.fields.find(f => f.fieldtype === 'Currency') || {}).fieldname || null;
+};
+
+/**
+ * Render the helper under a template field.
+ * opts: {
+ *   field: 'message_template', doctype,
+ *   mode: 'doc' (one document -> doc.x) | 'list' (Document List -> docs loop),
+ *   variables: [[code, description], ...],
+ *   snippets: function(ctx) -> [{label, text, hint}], ctx = {meta, title, amount, obj}
+ * }
+ */
+frappe.whatsapp.template_helper = function(frm, opts) {
+    let fld = frm.get_field(opts.field);
+    if (!fld) return;
+    fld.$wrapper.find('.wa-template-helper').remove();
+    if (!opts.doctype) return;
+
+    let esc = frappe.utils.escape_html;
+
+    let insert = function(text) {
+        let editor = fld.editor;
+        if (editor && typeof editor.insert === 'function') {
+            editor.focus();
+            editor.insert(text);
+        } else {
+            let current = frm.doc[opts.field] || '';
+            frm.set_value(opts.field, current + (current && !current.endsWith('\n') ? '\n' : '') + text);
+        }
+        frappe.show_alert({ message: __('Inserted into the template'), indicator: 'green' }, 2);
+    };
+
+    frappe.model.with_doctype(opts.doctype, function() {
+        let meta = frappe.get_meta(opts.doctype);
+        let obj = opts.mode === 'list' ? 'd' : 'doc';
+        let fields = meta.fields.filter(df => !frappe.whatsapp.LAYOUT_TYPES.includes(df.fieldtype) && df.fieldtype !== 'Table'
+            && df.fieldtype !== 'Table MultiSelect' && !df.hidden);
+        let ctx = {
+            meta: meta,
+            obj: obj,
+            title: frappe.whatsapp.guess_title_field(meta),
+            amount: frappe.whatsapp.guess_amount_field(meta),
+            amount_df: null,
+        };
+        ctx.amount_df = ctx.amount ? meta.fields.find(f => f.fieldname === ctx.amount) : null;
+
+        // Field picker
+        let $select = $(`<select class="form-control input-xs" style="max-width:320px;display:inline-block;"></select>`);
+        $select.append(`<option value="">${esc(__('➕ Insert field…'))}</option>`);
+        let $fields = $(`<optgroup label="${esc(opts.mode === 'list' ? __('Field (inside the list loop)') : __('Field'))}"></optgroup>`);
+        let exprs = {};
+        let add_option = ($group, key, label, expr) => {
+            exprs[key] = expr;
+            $group.append($('<option></option>').val(key).text(label));
+        };
+        add_option($fields, 'f:name', `${__('ID')} (name)`, `{{ ${obj}.name }}`);
+        fields.forEach(df => add_option($fields, 'f:' + df.fieldname,
+            `${__(df.label || df.fieldname)} (${df.fieldtype})`, frappe.whatsapp.field_expr(df, obj, meta)));
+        $select.append($fields);
+
+        if (opts.mode === 'list') {
+            let numeric = fields.filter(df => frappe.whatsapp.NUMERIC_TYPES.includes(df.fieldtype));
+            if (numeric.length) {
+                let $totals = $(`<optgroup label="${esc(__('Total of all matching documents'))}"></optgroup>`);
+                numeric.forEach(df => add_option($totals, 't:' + df.fieldname, `Σ ${__(df.label || df.fieldname)}`,
+                    df.fieldtype === 'Currency' ? `{{ format_currency(total('${df.fieldname}')) }}` : `{{ total('${df.fieldname}') }}`));
+                $select.append($totals);
+            }
+        } else {
+            // Child tables: loop over rows
+            let tables = meta.fields.filter(df => df.fieldtype === 'Table' && df.options);
+            if (tables.length) {
+                let $tables = $(`<optgroup label="${esc(__('List rows of a table'))}"></optgroup>`);
+                tables.forEach(df => {
+                    let child = frappe.get_meta(df.options);
+                    let child_title = child ? frappe.whatsapp.guess_title_field(child) : null;
+                    let qty = child && child.fields.some(f => f.fieldname === 'qty') ? ' x {{ row.qty }}' : '';
+                    let line = child_title ? `{{ row.${child_title} }}` : '{{ row.idx }}';
+                    add_option($tables, 'r:' + df.fieldname, `🔁 ${__(df.label || df.fieldname)}`,
+                        `{% for row in doc.${df.fieldname} %}• ${line}${qty}\n{% endfor %}`);
+                });
+                $select.append($tables);
+            }
+        }
+
+        $select.on('change', function() {
+            let key = $(this).val();
+            if (key && exprs[key]) insert(exprs[key]);
+            $(this).val('');
+        });
+
+        // Snippets
+        let snippets = (opts.snippets ? opts.snippets(ctx) : []).filter(Boolean);
+        let $snippets = $('<div class="d-flex flex-wrap mt-2" style="gap:6px;"></div>');
+        snippets.forEach(s => {
+            let $btn = $(`<button type="button" class="btn btn-default btn-xs"></button>`).text(s.label);
+            if (s.hint) $btn.attr('title', s.hint);
+            $btn.on('click', () => insert(s.text));
+            $snippets.append($btn);
+        });
+
+        // Variables
+        let vars = (opts.variables || []).map(v =>
+            `<li><a href="#" class="wa-insert-var" data-code="${esc(v[0])}"><code>${esc(v[0])}</code></a> — ${esc(v[1])}</li>`).join('');
+
+        let $box = $(`
+            <div class="wa-template-helper mt-2 p-3 rounded border" style="background:var(--subtle-accent, #f8f9fa);">
+                <div class="small text-muted mb-2">${esc(__('Click to insert at the cursor:'))}</div>
+                <div class="wa-field-picker"></div>
+                <div class="wa-snippets"></div>
+                <details class="mt-2">
+                    <summary class="small text-muted" style="cursor:pointer;">${esc(__('All variables & formatting'))}</summary>
+                    <ul class="small mt-2 mb-1">${vars}</ul>
+                    <div class="small text-muted">${esc(__('WhatsApp formatting:'))} <code>*bold*</code> <code>_italic_</code> <code>~strike~</code></div>
+                </details>
+            </div>`);
+        $box.find('.wa-field-picker').append($select);
+        $box.find('.wa-snippets').append($snippets);
+        $box.on('click', '.wa-insert-var', function(e) {
+            e.preventDefault();
+            insert($(this).data('code'));
+        });
+        fld.$wrapper.append($box);
+    });
+};

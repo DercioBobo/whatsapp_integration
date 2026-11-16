@@ -69,6 +69,11 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
                 load_date_fields(frm);
             }
         }
+        setup_template_help(frm);
+    },
+
+    date_field: function (frm) {
+        setup_template_help(frm);
     },
 
     event: function (frm) {
@@ -101,6 +106,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
             frm.set_value('group_name', '');
             clear_group_mentions(frm);
         }
+        setup_template_help(frm);
     },
 
     group_id: function (frm) {
@@ -323,41 +329,60 @@ function load_date_fields(frm) {
 // ─── Template Help ────────────────────────────────────────────────────────────
 
 function setup_template_help(frm) {
-    if (!frm.doc.document_type) return;
-
+    // Old static panel (pre template-helper versions)
     frm.fields_dict.message_template.$wrapper.siblings('.template-help').remove();
 
-    let help_html = `
-        <div class="template-help mt-3 p-3 bg-light rounded">
-            <h6><i class="fa fa-info-circle"></i> ${__('Template Variables')}</h6>
-            <p class="text-muted small mb-2">${__('Use Jinja2 syntax:')}</p>
-            <ul class="small mb-2">
-                <li><code>{{ doc.name }}</code> — ${__('Document ID')}</li>
-                <li><code>{{ doc.fieldname }}</code> — ${__('Any document field')}</li>
-                <li><code>{{ row.fieldname }}</code> — ${__('Child row field (when using child table)')}</li>
-                <li><code>{{ changed_fields }}</code> — ${__('List of changed field names')}</li>
-                <li><code>{{ changed_values.fieldname }}</code> — ${__('New value of changed field')}</li>
-                <li><code>{{ previous_values.fieldname }}</code> — ${__('Old value of changed field')}</li>
-                <li><code>{{ mentions }}</code> — ${__('Tags for group members (e.g. @258841234567). Appended at the end if not used.')}</li>
-                <li><code>{{ format_date(doc.date_field) }}</code> — ${__('Formatted date')}</li>
-                <li><code>{{ format_currency(doc.amount, "USD") }}</code> — ${__('Formatted currency')}</li>
-            </ul>
-            ${frm.doc.event === 'Recurring' ? `
-            <p class="text-muted small mb-1">${__('Recurring variables:')}</p>
-            <ul class="small mb-2">
-                <li><code>{{ reminder_number }}</code> — ${__('1 on the first reminder, 2 on the second...')}</li>
-                <li><code>{{ days_overdue }}</code> — ${__('Days since the Date Field (negative = not yet due)')}</li>
-                <li><code>{{ days_until }}</code> — ${__('Days until the Date Field')}</li>
-                <li><code>{{ last_sent }}</code> — ${__('When the previous reminder was sent (empty on the first)')}</li>
-            </ul>` : ''}
-            <p class="text-muted small mb-1">${__('WhatsApp formatting:')}</p>
-            <ul class="small mb-0">
-                <li><code>*bold*</code> | <code>_italic_</code> | <code>~strikethrough~</code></li>
-            </ul>
-        </div>
-    `;
+    let recurring = frm.doc.event === 'Recurring';
+    let has_group = ['WhatsApp Group', 'Document + Group'].includes(frm.doc.recipient_type);
 
-    frm.fields_dict.message_template.$wrapper.after(help_html);
+    let variables = [
+        ['{{ doc.name }}', __('Document ID')],
+        ['{{ doc.fieldname }}', __('Any document field')],
+        ['{{ row.fieldname }}', __('Child row field (when using child table)')],
+        ['{{ changed_fields }}', __('List of changed field names')],
+        ['{{ changed_values.fieldname }}', __('New value of changed field')],
+        ['{{ previous_values.fieldname }}', __('Old value of changed field')],
+        ['{{ format_date(doc.posting_date) }}', __('Formatted date')],
+        ['{{ format_currency(doc.grand_total, doc.currency) }}', __('Formatted amount')],
+        ['{{ get_url() }}/app/' + frappe.router.slug(frm.doc.document_type || '') + '/{{ doc.name }}', __('Link to the document')],
+        ['{{ mentions }}', __('Tags for group members. Appended at the end if not used.')],
+    ];
+    if (recurring) {
+        variables.push(
+            ['{{ reminder_number }}', __('1 on the first reminder, 2 on the second...')],
+            ['{{ days_overdue }}', __('Days since the Date Field (negative = not yet due)')],
+            ['{{ days_until }}', __('Days until the Date Field')],
+            ['{{ last_sent }}', __('When the previous reminder was sent (empty on the first)')]
+        );
+    }
+
+    frappe.whatsapp.template_helper(frm, {
+        field: 'message_template',
+        doctype: frm.doc.document_type,
+        mode: 'doc',
+        variables: variables,
+        snippets: function (ctx) {
+            let title = ctx.title ? `{{ doc.${ctx.title} }}` : '{{ doc.name }}';
+            let amount = ctx.amount_df ? frappe.whatsapp.field_expr(ctx.amount_df, 'doc', ctx.meta) : null;
+            let date = frm.doc.date_field ? `{{ format_date(doc.${frm.doc.date_field}) }}` : null;
+            return [
+                { label: __('Greeting'), text: `Olá ${title},\n` },
+                { label: __('Document + amount'), text: `*{{ doc.name }}*${amount ? ' — ' + amount : ''}\n` },
+                date && { label: __('Due date'), text: `Vencimento: ${date}\n` },
+                recurring && { label: __('Reminder that gets firmer'),
+                    hint: __('Friendly first, then numbered warnings'),
+                    text: `{% if reminder_number == 1 %}Lembrete amigável:{% else %}*{{ reminder_number }}º aviso:*{% endif %} ` +
+                          `*{{ doc.name }}*${amount ? ' de ' + amount : ''}` +
+                          `${frm.doc.date_field ? ' venceu há {{ days_overdue }} dias.' : '.'}\n` },
+                recurring && frm.doc.date_field && { label: __('Overdue / due soon'),
+                    text: `{% if days_overdue > 0 %}Em atraso há {{ days_overdue }} dias{% elif days_overdue == 0 %}Vence hoje{% else %}Vence em {{ days_until }} dias{% endif %}\n` },
+                { label: __('Only if…'), hint: __('Show a line only when a condition is true'),
+                    text: `{% if doc.status == "Overdue" %}⚠️ Em atraso{% endif %}\n` },
+                { label: __('Link'), text: `🔗 {{ get_url() }}/app/${frappe.router.slug(frm.doc.document_type)}/{{ doc.name }}\n` },
+                has_group && { label: __('Group tags'), text: '{{ mentions }}' },
+            ];
+        }
+    });
 }
 
 // ─── Group Picker ─────────────────────────────────────────────────────────────

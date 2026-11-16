@@ -54,6 +54,7 @@ frappe.ui.form.on('WhatsApp Auto Report', {
             load_split_options(frm);
         }
         describe_list_filters(frm);
+        setup_list_template_help(frm);
         frm._last_group_id = frm.doc.group_id;
 
         // Show last status indicator
@@ -81,6 +82,7 @@ frappe.ui.form.on('WhatsApp Auto Report', {
             load_split_options(frm);
         }
         describe_list_filters(frm);
+        setup_list_template_help(frm);
     },
 
     list_doctype: function (frm) {
@@ -91,6 +93,15 @@ frappe.ui.form.on('WhatsApp Auto Report', {
             load_split_options(frm);
         }
         describe_list_filters(frm);
+        setup_list_template_help(frm);
+    },
+
+    split_by_field: function (frm) {
+        setup_list_template_help(frm);
+    },
+
+    include_link: function (frm) {
+        setup_list_template_help(frm);
     },
 
     list_filters: function (frm) {
@@ -122,10 +133,53 @@ frappe.ui.form.on('WhatsApp Auto Report', {
             frappe.show_alert({ message: __('Grupo alterado: membros marcados foram limpos'), indicator: 'orange' }, 4);
         }
         frm._last_group_id = frm.doc.group_id;
+        setup_list_template_help(frm);
     }
 });
 
 // ─── Document List ────────────────────────────────────────────────────────────
+
+function setup_list_template_help(frm) {
+    let is_list = frm.doc.source === 'Document List';
+    frappe.whatsapp.template_helper(frm, {
+        field: 'message_template',
+        doctype: is_list ? frm.doc.list_doctype : null,
+        mode: 'list',
+        variables: [
+            ['{% for d in docs %}…{% endfor %}', __('Loop over the listed documents (use d.field inside)')],
+            ['{{ count }}', __('Number of matching documents (all, not only the listed ones)')],
+            ['{{ more }}', __('How many were not listed')],
+            ["{{ total('outstanding_amount') }}", __('Sum of a numeric field over all matching documents')],
+            ['{{ recipient_name }}', __('Person receiving it (when using Split by)')],
+            ['{{ report_name }}', __('This report\'s name')],
+            ['{{ format_date(date) }}', __('Today\'s date')],
+            ['{{ link }}', __('Link to the list in ERPNext (when Include Report Link is on)')],
+            ['{{ mentions }}', __('Tags for group members')],
+        ],
+        snippets: function (ctx) {
+            let title = ctx.title ? ` — {{ d.${ctx.title} }}` : '';
+            let amount = ctx.amount_df ? frappe.whatsapp.field_expr(ctx.amount_df, 'd', ctx.meta) : null;
+            let total = ctx.amount ? `{{ format_currency(total('${ctx.amount}')) }}` : null;
+            let more = '{% if more %}…e mais {{ more }}{% endif %}';
+            let list = `{% for d in docs %}• {{ d.name }}${title}\n{% endfor %}${more}`;
+            let list_amount = `{% for d in docs %}• {{ d.name }}${title}${amount ? ' — ' + amount : ''}\n{% endfor %}${more}`;
+            let header = '📋 *{{ report_name }}*{% if recipient_name %} — {{ recipient_name }}{% endif %} — {{ format_date(date) }}\n' +
+                `{{ count }} registo(s)${total ? ' · total ' + total : ''}\n\n`;
+            return [
+                { label: __('Full message'), hint: __('Header, count, total and the list'), text: header + list_amount + '\n' },
+                { label: __('List: ID — name'), text: list + '\n' },
+                amount && { label: __('List with amount'), text: list_amount + '\n' },
+                { label: __('Header + count'), text: header },
+                total && { label: __('Total'), text: `Total: ${total}\n` },
+                frm.doc.split_by_field && { label: __('Greeting (per person)'), text: 'Olá {{ recipient_name }}, estes são os seus pendentes:\n\n' },
+                { label: __('Nothing pending'), hint: __('Only when nothing matches (turn off "Send only if data")'),
+                    text: '{% if not count %}Nada pendente hoje 🎉{% endif %}\n' },
+                frm.doc.include_link && { label: __('Link'), text: '{% if link %}🔗 {{ link }}{% endif %}\n' },
+                frm.doc.group_id && { label: __('Group tags'), text: '{{ mentions }}' },
+            ];
+        }
+    });
+}
 
 function describe_list_filters(frm) {
     if (frm.doc.source !== 'Document List') return;
