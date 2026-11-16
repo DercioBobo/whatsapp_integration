@@ -105,31 +105,14 @@ def is_due(rule, settings=None, now=None):
 # Document selection
 # ============================================================
 
-def parse_filters(raw):
-    """
-    Accept Frappe filters as a JSON list ([[field, op, value], ...] or
-    [[doctype, field, op, value], ...]) or a dict ({field: value}).
-    """
-    if not raw:
-        return []
-    filters = json.loads(raw) if isinstance(raw, str) else raw
-    if isinstance(filters, dict):
-        return filters
-    if not isinstance(filters, list):
-        frappe.throw(_("Document Filters must be a JSON list or object"))
-    out = []
-    for f in filters:
-        if not isinstance(f, (list, tuple)) or len(f) not in (3, 4, 5):
-            frappe.throw(_("Invalid filter: {0}. Use [field, operator, value].").format(json.dumps(f)))
-        # Drop doctype prefix / FilterGroup "hidden" flag
-        out.append(list(f[1:4]) if len(f) >= 4 else list(f))
-    return out
+def parse_filters(raw, doctype=None):
+    """See filters.parse_filters (kept here for existing imports)."""
+    from whatsapp_notifications.whatsapp_notifications.filters import parse_filters as _parse
+    return _parse(raw, doctype)
 
 
 def _get_filters(rule, today):
     filters = parse_filters(rule.get("recurring_filters"))
-    if isinstance(filters, dict):
-        filters = [[k, "=", v] if not isinstance(v, (list, tuple)) else [k] + list(v) for k, v in filters.items()]
 
     if rule.get("recurring_start_after_date") and rule.get("date_field"):
         # date_field + start_days <= today  <=>  date_field < today - start_days + 1

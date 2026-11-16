@@ -33,7 +33,12 @@ app_include_js = "/assets/whatsapp_notifications/js/whatsapp_notifications.js"
 # page_js = {"page" : "public/js/file.js"}
 
 # Include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+# Shared helpers (group picker, member tagging, filters editor/summary) ship with
+# these forms' scripts, so they never depend on a rebuilt or browser-cached asset.
+doctype_js = {
+    "WhatsApp Notification Rule": "public/js/whatsapp_form_helpers.js",
+    "WhatsApp Auto Report": "public/js/whatsapp_form_helpers.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}

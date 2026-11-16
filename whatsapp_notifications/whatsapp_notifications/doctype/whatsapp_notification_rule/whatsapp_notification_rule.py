@@ -108,10 +108,8 @@ class WhatsAppNotificationRule(Document):
             self.recurring_start_after_date = 0
 
         # Filters: valid JSON and a query that actually runs
-        try:
-            parse_filters(self.recurring_filters)
-        except ValueError as e:
-            frappe.throw(_("Document Filters is not valid JSON: {}").format(e))
+        # Checks JSON, fields, operators and timespans with a readable error
+        parse_filters(self.recurring_filters, self.document_type)
         if self.document_type:
             try:
                 get_matching_docnames(self, limit=1)

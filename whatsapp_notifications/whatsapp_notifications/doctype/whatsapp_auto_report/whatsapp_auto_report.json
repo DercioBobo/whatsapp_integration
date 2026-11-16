@@ -152,7 +152,7 @@
             "label": "Document Filters",
             "options": "JSON",
             "depends_on": "eval:doc.source=='Document List'",
-            "description": "Frappe filters. Example: [[\"docstatus\",\"=\",1],[\"outstanding_amount\",\">\",0]]. Timespans work too: [\"posting_date\",\"Timespan\",\"this month\"]"
+            "description": "Use the Edit Filters button, or type a list of [field, operator, value]. Example: [[\"posting_date\", \"Timespan\", \"this month\"], [\"outstanding_amount\", \">\", 0]]"
         },
         {
             "fieldname": "edit_list_filters_button",
@@ -399,7 +399,7 @@
     ],
     "index_web_pages_for_search": 1,
     "links": [],
-    "modified": "2026-11-16 12:00:00.000000",
+    "modified": "2026-11-17 00:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Auto Report",

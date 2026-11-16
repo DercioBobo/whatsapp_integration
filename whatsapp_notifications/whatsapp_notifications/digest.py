@@ -34,14 +34,10 @@ _NUMERIC_TYPES = ("Currency", "Float", "Int", "Percent", "Duration")
 # Filters / queries
 # ============================================================
 
-def parse_list_filters(raw):
-    """Same format as recurring rules: [[field, op, value], ...] or {field: value}."""
-    from whatsapp_notifications.whatsapp_notifications.recurring import parse_filters
-    filters = parse_filters(raw)
-    if isinstance(filters, dict):
-        filters = [[k, "=", v] if not isinstance(v, (list, tuple)) else [k] + list(v)
-                   for k, v in filters.items()]
-    return filters
+def parse_list_filters(raw, doctype=None):
+    """Same format as recurring rules (see filters.parse_filters); always a list."""
+    from whatsapp_notifications.whatsapp_notifications.filters import parse_filters
+    return parse_filters(raw, doctype)
 
 
 def _safe_order_by(doctype, order_by):

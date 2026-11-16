@@ -31,6 +31,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         }
 
         setup_template_help(frm);
+        describe_recurring_filters(frm);
         frm._last_group_id = frm.doc.group_id;
 
         if (frm.doc.document_type) {
@@ -53,6 +54,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         frm.set_value('child_phone_field', '');
         frm.set_value('child_watch_fields', '');
         frm.set_value('date_field', '');
+        frm.set_value('recurring_filters', '');
 
         destroy_chip_picker(frm, 'phone_field');
         destroy_chip_picker(frm, 'group_mention_fields');
@@ -74,6 +76,7 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
             load_date_fields(frm);
         }
         setup_template_help(frm);
+        describe_recurring_filters(frm);
         // Refresh value_changed picker visibility when event changes
         if (frm.doc.document_type) {
             destroy_chip_picker(frm, 'value_changed');
@@ -137,8 +140,17 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
 
     edit_recurring_filters_button: function (frm) {
         show_recurring_filters_dialog(frm);
+    },
+
+    recurring_filters: function (frm) {
+        describe_recurring_filters(frm);
     }
 });
+
+function describe_recurring_filters(frm) {
+    if (frm.doc.event !== 'Recurring') return;
+    frappe.whatsapp.describe_filters(frm, { doctype: frm.doc.document_type, field: 'recurring_filters' });
+}
 
 function uses_date_field(event) {
     return ['Days Before', 'Days After', 'On Same Day', 'Recurring'].includes(event);

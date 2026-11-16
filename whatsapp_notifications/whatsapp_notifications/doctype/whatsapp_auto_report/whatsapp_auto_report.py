@@ -32,10 +32,8 @@ class WhatsAppAutoReport(Document):
         if not ((self.recipients or "").strip() or self.group_id or self.split_by_field):
             frappe.throw(_("Add recipients, a WhatsApp group or a Split by field"))
 
-        try:
-            digest.parse_list_filters(self.list_filters)
-        except ValueError as e:
-            frappe.throw(_("Document Filters is not valid JSON: {}").format(e))
+        # Checks JSON, fields, operators and timespans with a readable error
+        digest.parse_list_filters(self.list_filters, self.list_doctype)
 
         if self.split_by_field:
             valid = [o["value"] for o in digest.get_split_options(self.list_doctype)]

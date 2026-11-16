@@ -53,6 +53,7 @@ frappe.ui.form.on('WhatsApp Auto Report', {
         if (frm.doc.source === 'Document List' && frm.doc.list_doctype) {
             load_split_options(frm);
         }
+        describe_list_filters(frm);
         frm._last_group_id = frm.doc.group_id;
 
         // Show last status indicator
@@ -79,6 +80,7 @@ frappe.ui.form.on('WhatsApp Auto Report', {
         if (frm.doc.source === 'Document List' && frm.doc.list_doctype) {
             load_split_options(frm);
         }
+        describe_list_filters(frm);
     },
 
     list_doctype: function (frm) {
@@ -88,6 +90,11 @@ frappe.ui.form.on('WhatsApp Auto Report', {
         if (frm.doc.list_doctype) {
             load_split_options(frm);
         }
+        describe_list_filters(frm);
+    },
+
+    list_filters: function (frm) {
+        describe_list_filters(frm);
     },
 
     edit_list_filters_button: function (frm) {
@@ -119,6 +126,11 @@ frappe.ui.form.on('WhatsApp Auto Report', {
 });
 
 // ─── Document List ────────────────────────────────────────────────────────────
+
+function describe_list_filters(frm) {
+    if (frm.doc.source !== 'Document List') return;
+    frappe.whatsapp.describe_filters(frm, { doctype: frm.doc.list_doctype, field: 'list_filters' });
+}
 
 function load_split_options(frm) {
     frappe.call({
