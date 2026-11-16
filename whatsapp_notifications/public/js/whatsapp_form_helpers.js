@@ -24,11 +24,17 @@ frappe.whatsapp.pick_group = function(frm, opts) {
         freeze_message: __('Fetching WhatsApp groups...'),
         callback: function(r) {
             if (!(r.message && r.message.success)) {
-                frappe.msgprint({
-                    title: __('Error'),
-                    indicator: 'red',
-                    message: (r.message && r.message.error) || __('Failed to fetch WhatsApp groups')
-                });
+                let error = (r.message && r.message.error) || __('Failed to fetch WhatsApp groups');
+                if (frm.doc[opts.id_field]) {
+                    // Still let the user remove the current group when the API is unreachable
+                    frappe.confirm(
+                        __('Could not load groups ({0}). Remove the current group "{1}" instead?',
+                            [frappe.utils.escape_html(error), frappe.utils.escape_html(frm.doc[opts.name_field] || frm.doc[opts.id_field])]),
+                        () => frappe.whatsapp.remove_group(frm, opts)
+                    );
+                } else {
+                    frappe.msgprint({ title: __('Error'), indicator: 'red', message: error });
+                }
                 return;
             }
 
@@ -50,7 +56,13 @@ frappe.whatsapp.pick_group = function(frm, opts) {
                         dialog.hide();
                         frappe.show_alert({ message: __('Group selected: ') + selected.subject, indicator: 'green' }, 3);
                     }
-                }
+                },
+                // Only offered when a group is already set
+                secondary_action_label: frm.doc[opts.id_field] ? __('Remove group') : null,
+                secondary_action: frm.doc[opts.id_field] ? function() {
+                    dialog.hide();
+                    frappe.whatsapp.remove_group(frm, opts);
+                } : null
             });
 
             // Show readable labels instead of raw group IDs
@@ -65,6 +77,15 @@ frappe.whatsapp.pick_group = function(frm, opts) {
             dialog.show();
         }
     });
+};
+
+/** Clear the group fields (the form's group_id handler clears the tagged members). */
+frappe.whatsapp.remove_group = function(frm, opts) {
+    opts = Object.assign({ id_field: 'group_id', name_field: 'group_name' }, opts || {});
+    let name = frm.doc[opts.name_field] || frm.doc[opts.id_field];
+    frm.set_value(opts.id_field, '');
+    frm.set_value(opts.name_field, '');
+    frappe.show_alert({ message: __('Group removed: {0}', [name]), indicator: 'orange' }, 3);
 };
 
 frappe.whatsapp.parse_number_list = function(value) {

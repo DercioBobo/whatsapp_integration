@@ -115,7 +115,12 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
             frm.set_value('group_mentions', '');
             frappe.show_alert({ message: __('Group changed: tagged members were cleared'), indicator: 'orange' }, 4);
         }
+        // Group removed: nothing left to tag
+        if (!frm.doc.group_id) {
+            clear_group_mentions(frm);
+        }
         frm._last_group_id = frm.doc.group_id;
+        setup_template_help(frm);
     },
 
     select_mentions_button: function (frm) {

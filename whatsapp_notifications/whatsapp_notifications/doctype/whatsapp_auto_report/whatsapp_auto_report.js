@@ -132,6 +132,10 @@ frappe.ui.form.on('WhatsApp Auto Report', {
             frm.set_value('group_mentions', '');
             frappe.show_alert({ message: __('Grupo alterado: membros marcados foram limpos'), indicator: 'orange' }, 4);
         }
+        // Group removed: nothing left to tag
+        if (!frm.doc.group_id && frm.doc.mention_everyone) {
+            frm.set_value('mention_everyone', 0);
+        }
         frm._last_group_id = frm.doc.group_id;
         setup_list_template_help(frm);
     }
