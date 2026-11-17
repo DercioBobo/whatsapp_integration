@@ -337,7 +337,7 @@
             "fieldname": "group_mentions",
             "fieldtype": "Small Text",
             "label": "Members to Tag",
-            "description": "Phone numbers to tag in the group (one per line or comma separated). Use the button below to pick from the group."
+            "description": "One per line: a number, or role: number (e.g. supervisor: 258841234567). Use {{ tag('supervisor') }} in the template to tag that person in a specific place. Easiest: use Select Members to Tag."
         },
         {
             "fieldname": "select_mentions_button",
@@ -534,7 +534,7 @@
             "link_fieldname": "notification_rule"
         }
     ],
-    "modified": "2026-11-17 00:00:00.000000",
+    "modified": "2026-11-17 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Notification Rule",

@@ -49,6 +49,30 @@ class WhatsAppAutoReport(Document):
         except Exception as e:
             frappe.throw(_("Document List could not be generated: {}").format(e))
 
+        self.validate_tags()
+
+    def validate_tags(self):
+        """Warn when the template tags a role that no member has."""
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import (
+            unknown_tag_keys, _TAG_CALL
+        )
+        from whatsapp_notifications.whatsapp_notifications.digest import group_mention_map
+
+        if not (self.message_template and _TAG_CALL.search(self.message_template)):
+            return
+        if not self.group_id:
+            frappe.msgprint(_("Tags only work in the WhatsApp group message; they will be left out."),
+                            indicator="orange", title=_("Tags"))
+            return
+        unknown = unknown_tag_keys([self.message_template], group_mention_map(self).keys())
+        if unknown:
+            frappe.msgprint(
+                _("The template tags {0}, but no tagged member has that role. "
+                  "Set it in Members to Tag as <code>role: number</code> (or use Select Members to Tag).").format(
+                    ", ".join("<b>{}</b>".format(frappe.utils.escape_html(u)) for u in unknown)),
+                indicator="orange", title=_("Unknown tag")
+            )
+
     def validate_filters(self):
         """Validate JSON filters"""
         if self.filters:

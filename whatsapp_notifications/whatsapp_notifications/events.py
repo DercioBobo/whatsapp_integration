@@ -255,9 +255,16 @@ def process_rule(doc, rule, settings):
             is_group = recipient_type == "group" or is_group_id(phone_or_group)
             mentions = group_mentions if is_group else []
 
+            if is_group:
+                text = apply_mentions_to_text(message, mentions) if mentions else message
+            else:
+                # Tags only work in groups; in a direct chat they'd show as bare numbers
+                from whatsapp_notifications.whatsapp_notifications.api import strip_mentions_from_text
+                text = strip_mentions_from_text(message, group_mentions) if group_mentions else message
+
             send_notification(
                 phone=phone_or_group,
-                message=apply_mentions_to_text(message, mentions) if mentions else message,
+                message=text,
                 reference_doctype=doc.doctype,
                 reference_name=doc.name,
                 notification_rule=rule.name,

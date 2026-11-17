@@ -378,12 +378,16 @@ def strip_mentions_from_text(text, numbers):
         if not pattern.search(line):
             lines.append(line)
             continue
+        indent = line[:len(line) - len(line.lstrip())]
         cleaned = re.sub(r"[ \t]{2,}", " ", pattern.sub("", line))
-        cleaned = re.sub(r"[ \t]+([,.;:!?])", r"\1", cleaned).rstrip()
+        cleaned = re.sub(r"[ \t]+([,.;:!?])", r"\1", cleaned)
+        # Keep the line's own indentation, drop the gap a leading tag left behind
+        cleaned = indent + cleaned.strip()
         if cleaned.strip():
             lines.append(cleaned)
     result = "\n".join(lines)
-    return re.sub(r"\n{3,}", "\n\n", result).strip()
+    # Trim blank lines around the text, but keep the first line's indentation
+    return re.sub(r"\n{3,}", "\n\n", result).strip("\n").rstrip()
 
 
 def post_with_mention_fallback(url, headers, payload, log, text_key):

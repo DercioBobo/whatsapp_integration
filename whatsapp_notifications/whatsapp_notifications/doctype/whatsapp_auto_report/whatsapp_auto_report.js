@@ -120,6 +120,10 @@ frappe.ui.form.on('WhatsApp Auto Report', {
         frappe.whatsapp.pick_group(frm, { id_field: 'group_id', name_field: 'group_name' });
     },
 
+    group_mentions: function (frm) {
+        setup_list_template_help(frm);
+    },
+
     select_mentions_button: function (frm) {
         frappe.whatsapp.pick_group_members(frm, {
             group_field: 'group_id', group_name_field: 'group_name', mentions_field: 'group_mentions'
@@ -149,6 +153,7 @@ function setup_list_template_help(frm) {
         field: 'message_template',
         doctype: is_list ? frm.doc.list_doctype : null,
         mode: 'list',
+        tag_keys: frm.doc.group_id ? () => frappe.whatsapp.tag_keys(frm, 'group_mentions') : null,
         variables: [
             ['{% for d in docs %}…{% endfor %}', __('Loop over the listed documents (use d.field inside)')],
             ['{{ count }}', __('Number of matching documents (all, not only the listed ones)')],
@@ -159,6 +164,7 @@ function setup_list_template_help(frm) {
             ['{{ format_date(date) }}', __('Today\'s date')],
             ['{{ link }}', __('Link to the list in ERPNext with the same filters (per person when using Split by)')],
             ['{{ mentions }}', __('Tags for group members')],
+            ["{{ tag('supervisor') }}", __('Tag one person by role (set roles in Select Members to Tag)')],
         ],
         snippets: function (ctx) {
             let title = ctx.title ? ` — {{ d.${ctx.title} }}` : '';

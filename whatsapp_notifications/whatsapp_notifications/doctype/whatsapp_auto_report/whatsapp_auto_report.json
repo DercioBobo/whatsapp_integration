@@ -300,7 +300,7 @@
             "fieldtype": "Small Text",
             "label": "Members to Tag",
             "depends_on": "eval:doc.source=='Document List' && doc.group_id",
-            "description": "Phone numbers to tag in the group message (one per line)"
+            "description": "One per line: a number, or role: number (e.g. supervisor: 258841234567). Use {{ tag('supervisor') }} in the template to tag that person in a specific place. Easiest: use Select Members to Tag."
         },
         {
             "fieldname": "select_mentions_button",
@@ -399,7 +399,7 @@
     ],
     "index_web_pages_for_search": 1,
     "links": [],
-    "modified": "2026-11-17 00:00:00.000000",
+    "modified": "2026-11-17 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Auto Report",

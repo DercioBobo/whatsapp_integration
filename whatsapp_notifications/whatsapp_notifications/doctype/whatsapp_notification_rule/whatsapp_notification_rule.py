@@ -41,18 +41,14 @@ class WhatsAppNotificationRule(Document):
             doc_level_fields.extend(self.group_mention_fields.split(","))
         if doc_level_fields:
             for field in [f.strip() for f in doc_level_fields if f.strip()]:
-                if "." in field:
-                    parts = field.split(".", 1)
-                    parent_df = meta.get_field(parts[0])
-                    if not parent_df or parent_df.fieldtype != "Link" or not parent_df.options:
-                        warnings.append(_("Field '{}' not found in {}").format(field, self.document_type))
-                    else:
-                        try:
-                            linked_meta = frappe.get_meta(parent_df.options)
-                            if not linked_meta.has_field(parts[1]):
-                                warnings.append(_("Field '{}' not found in {}").format(field, self.document_type))
-                        except Exception:
-                            pass
+                if "." in field or "[" in field:
+                    # Links and child tables: customer.mobile_no, sales_team.sales_person.employee.cell_number
+                    try:
+                        ok, msg = resolve_field_path(self.document_type, field)
+                    except Exception as e:
+                        ok, msg = False, str(e)
+                    if not ok:
+                        warnings.append(_("Field '{0}': {1}").format(field, msg))
                 elif not meta.has_field(field):
                     warnings.append(_("Field '{}' not found in {}").format(field, self.document_type))
 
@@ -143,7 +139,26 @@ class WhatsAppNotificationRule(Document):
             if df.fieldtype not in ("Date", "Datetime"):
                 frappe.throw(_("Date Field '{}' must be Date or Datetime type").format(self.date_field))
 
+    def validate_tags(self):
+        """Warn when a template tags a role that no member has."""
+        templates = [self.message_template, self.previous_day_template, self.next_day_template]
+        if not any(t and _TAG_CALL.search(t) for t in templates):
+            return
+        is_group = self.recipient_type in ("WhatsApp Group", "Document + Group") and self.group_id
+        unknown = unknown_tag_keys(templates, self.get_tag_keys()) if is_group else []
+        if unknown:
+            frappe.msgprint(
+                _("The template tags {0}, but no tagged member has that role. "
+                  "Set it in Members to Tag as <code>role: number</code> (or use Select Members to Tag).").format(
+                    ", ".join("<b>{}</b>".format(frappe.utils.escape_html(u)) for u in unknown)),
+                indicator="orange", title=_("Unknown tag")
+            )
+        elif not is_group:
+            frappe.msgprint(_("Tags only work when sending to a WhatsApp group; they will be left out."),
+                            indicator="orange", title=_("Tags"))
+
     def validate_template(self):
+        self.validate_tags()
         dummy_ctx = _make_dummy_render_context()
         for label, template in [
             ("message_template", self.message_template),
@@ -366,33 +381,36 @@ class WhatsAppNotificationRule(Document):
 
         return recipients
 
-    def get_group_mentions(self, doc):
+    def get_group_mention_map(self, doc):
         """
-        Numbers to @mention in group messages: the fixed members picked on
-        the rule plus any numbers found in the configured document fields.
-        Returns a de-duplicated list of WhatsApp-formatted numbers.
+        Who to @mention in group messages, keyed for {{ tag('key') }}:
+            - members picked on the rule: key = their role ("supervisor: 2588...")
+              or the number itself when no role was given
+            - numbers from document fields: key = the field path ("sales_person.mobile_no")
+        Returns an ordered {key: [numbers]}.
         """
-        from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
-
         if self.recipient_type not in ("WhatsApp Group", "Document + Group") or not self.group_id:
-            return []
+            return {}
 
-        raw = []
-        if self.group_mentions:
-            raw.extend(_split_phone_value(self.group_mentions.replace("\n", ",")))
+        entries = parse_mention_entries(self.group_mentions)
 
         if self.group_mention_fields and doc is not None:
             for field in [f.strip() for f in self.group_mention_fields.split(",") if f.strip()]:
                 val = get_nested_value(doc, field)
                 if val:
-                    raw.extend(_split_phone_value(str(val)))
+                    entries.extend((field, phone) for phone in _split_phone_value(str(val)))
 
-        numbers = []
-        for phone in raw:
-            formatted = format_phone_number(phone)
-            if formatted and formatted not in numbers:
-                numbers.append(formatted)
-        return numbers
+        return build_mention_map(entries)
+
+    def get_group_mentions(self, doc):
+        """All numbers to @mention in group messages (de-duplicated)."""
+        return mention_numbers(self.get_group_mention_map(doc))
+
+    def get_tag_keys(self):
+        """Keys usable in {{ tag('...') }}, for template validation."""
+        keys = set(build_mention_map(parse_mention_entries(self.group_mentions), format_numbers=False).keys())
+        keys.update(normalize_tag_key(f) for f in (self.group_mention_fields or "").split(",") if f.strip())
+        return keys
 
     def _build_row_entries(self, doc, child_rows, watch_fields=None):
         doc_before = doc.get_doc_before_save()
@@ -452,7 +470,9 @@ class WhatsAppNotificationRule(Document):
             context["changed_values"] = {f: getattr(row, f, None) for f in cf} if row else {}
             context["previous_values"] = {f: getattr(row_before, f, None) for f in cf} if row_before else {}
             context["row_before"] = row_before
-            context["mentions"] = "" if for_owner else format_mentions(self.get_group_mentions(doc))
+            mention_map = {} if for_owner else self.get_group_mention_map(doc)
+            context["mentions"] = format_mentions(mention_numbers(mention_map))
+            context["tag"], context["tags"] = make_tag_helpers(mention_map)
             context.update(self._extra_context())
             return frappe.render_template(template, context)
         except Exception as e:
@@ -544,11 +564,105 @@ def _make_dummy_render_context():
     context["previous_values"] = {}
     context["row_before"] = None
     context["mentions"] = ""
+    context["tag"], context["tags"] = make_tag_helpers({})
     context.update({
         "reminder_number": 1, "reminders_sent": 0, "last_sent": None,
         "days_overdue": 0, "days_until": 0,
     })
     return context
+
+
+def normalize_tag_key(key):
+    """'Supervisor ' -> 'supervisor', 'Sales Person.Mobile' -> 'sales_person.mobile'."""
+    return re.sub(r"[^a-z0-9_.]+", "_", str(key or "").strip().lower()).strip("_")
+
+
+def parse_mention_entries(text):
+    """
+    Parse a 'Members to Tag' field into [(role or None, phone)].
+    One entry per line (or comma): "supervisor: 258841234567" or just "258841234567".
+    """
+    entries = []
+    for chunk in re.split(r"[\n,;]+", text or ""):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        role = None
+        if ":" in chunk:
+            role, chunk = chunk.split(":", 1)
+            role = role.strip() or None
+        for phone in _split_phone_value(chunk.strip()):
+            entries.append((role, phone))
+    return entries
+
+
+def build_mention_map(entries, format_numbers=True):
+    """[(role or None, phone)] -> ordered {key: [numbers]}; key = role, or the number when no role."""
+    from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
+
+    mention_map = {}
+    for role, phone in entries:
+        number = format_phone_number(phone) if format_numbers else re.sub(r"\D", "", phone)
+        if not number:
+            continue
+        key = normalize_tag_key(role) if role else number
+        numbers = mention_map.setdefault(key, [])
+        if number not in numbers:
+            numbers.append(number)
+    return mention_map
+
+
+def mention_numbers(mention_map):
+    """All numbers in a mention map, de-duplicated, in order."""
+    out = []
+    for numbers in (mention_map or {}).values():
+        for n in numbers:
+            if n not in out:
+                out.append(n)
+    return out
+
+
+def make_tag_helpers(mention_map):
+    """
+    Template helpers for placing individual tags:
+        {{ tag('supervisor') }}   -> "@258841234567"  (all numbers for that role)
+        {{ tag('841234567') }}    -> the member with that number
+        {{ tags.supervisor }}     -> same, as a dict
+    Unknown roles render as "" (and are flagged when the template is saved).
+    """
+    tags = {key: format_mentions(numbers) for key, numbers in (mention_map or {}).items()}
+
+    def tag(key):
+        found = tags.get(normalize_tag_key(key))
+        if found is not None:
+            return found
+        digits = re.sub(r"\D", "", str(key or ""))
+        if len(digits) >= 6:
+            for n in mention_numbers(mention_map):
+                if n == digits or n.endswith(digits):
+                    return format_mentions([n])
+        return ""
+
+    return tag, tags
+
+
+_TAG_CALL = re.compile(r"""tag\(\s*['"]([^'"]+)['"]\s*\)|tags\.([A-Za-z0-9_]+)""")
+
+
+def unknown_tag_keys(templates, known_keys):
+    """Roles used via tag('x') / tags.x in templates that have no member."""
+    known = {normalize_tag_key(k) for k in known_keys}
+    unknown = []
+    for template in templates:
+        for m in _TAG_CALL.finditer(template or ""):
+            raw = m.group(1) or m.group(2)
+            key = normalize_tag_key(raw)
+            digits = re.sub(r"\D", "", raw)
+            if key in known or (len(digits) >= 6 and any(k.endswith(digits) for k in known)):
+                continue
+            if raw not in unknown:
+                unknown.append(raw)
+    return unknown
 
 
 def format_mentions(numbers):
@@ -614,33 +728,134 @@ def get_template_context(doc):
     }
 
 
+def _read(obj, field):
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(field)
+    return getattr(obj, field, None)
+
+
+def _load_linked(obj, field, link_value):
+    """Follow a Link / Dynamic Link field to the linked record (None if missing)."""
+    doctype = _read(obj, "doctype")
+    if not doctype or not link_value or not isinstance(link_value, str):
+        return None
+    df = frappe.get_meta(doctype).get_field(field)
+    if not df:
+        return None
+    if df.fieldtype == "Link":
+        target = df.options
+    elif df.fieldtype == "Dynamic Link":
+        target = _read(obj, df.options)
+    else:
+        return None
+    if not target:
+        return None
+    try:
+        return frappe.get_cached_doc(target, link_value)
+    except frappe.DoesNotExistError:
+        return None
+
+
 def get_nested_value(doc, field_path):
+    """
+    Read a dotted path from a document, following links and child tables:
+        contact_mobile                                   field on the document
+        customer.mobile_no                               field on the linked Customer
+        sales_team.sales_person.employee.cell_number    every row of a child table,
+                                                         through two links
+        sales_team[0].sales_person                       one row of a child table
+    A path through a child table can give several values; they are returned
+    comma-separated (phone fields are split on commas).
+    """
     if not field_path:
         return None
 
+    values = _walk(doc, field_path.split("."))
+    values = [v for v in values if v not in (None, "")]
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    seen = []
+    for v in values:
+        if str(v) not in seen:
+            seen.append(str(v))
+    return ", ".join(seen)
+
+
+def _walk(obj, parts):
+    if obj is None:
+        return []
+    if not parts:
+        return [obj]
+
+    part, rest = parts[0], parts[1:]
+    index = None
+    if "[" in part:
+        part, idx = part.split("[", 1)
+        try:
+            index = int(idx.rstrip("]"))
+        except ValueError:
+            return []
+
+    value = _read(obj, part)
+
+    # Child table: one row by index, or every row
+    if isinstance(value, (list, tuple)):
+        rows = value
+        if index is not None:
+            rows = [value[index]] if len(value) > index else []
+        out = []
+        for row in rows:
+            out.extend(_walk(row, rest))
+        return out
+
+    if not rest:
+        return [value]
+
+    # More parts after a plain value: it must be a link to follow
+    linked = _load_linked(obj, part, value)
+    return _walk(linked, rest) if linked is not None else []
+
+
+_PHONEISH = ("phone", "mobile", "cell", "whatsapp", "contact_no", "telefone", "telemovel")
+
+
+def _is_phone_field(df):
+    name = (df.fieldname or "").lower()
+    return df.fieldtype == "Phone" or (
+        df.fieldtype == "Data" and (df.options == "Phone" or any(p in name for p in _PHONEISH)))
+
+
+def resolve_field_path(doctype, field_path):
+    """
+    Check a dotted path against the schema (links and child tables).
+    Returns (ok, message).
+    """
+    if not field_path:
+        return False, _("Empty field")
+    meta = frappe.get_meta(doctype)
     parts = field_path.split(".")
-    value = doc
-
-    for part in parts:
-        if value is None:
-            return None
-        if "[" in part:
-            field_name, index = part.split("[")
-            index = int(index.rstrip("]"))
-            value = getattr(value, field_name, None)
-            if value and isinstance(value, (list, tuple)) and len(value) > index:
-                value = value[index]
-            else:
-                return None
+    for i, raw in enumerate(parts):
+        part = raw.split("[", 1)[0]
+        df = meta.get_field(part)
+        if not df:
+            if part in ("name", "owner", "modified_by") and i == len(parts) - 1:
+                return True, ""
+            return False, _("'{0}' not found in {1}").format(part, meta.name)
+        if i == len(parts) - 1:
+            return True, ""
+        if df.fieldtype in ("Table", "Table MultiSelect") and df.options:
+            meta = frappe.get_meta(df.options)
+        elif df.fieldtype == "Link" and df.options:
+            meta = frappe.get_meta(df.options)
+        elif df.fieldtype == "Dynamic Link":
+            return True, ""  # target doctype is only known per document
         else:
-            if hasattr(value, part):
-                value = getattr(value, part)
-            elif isinstance(value, dict):
-                value = value.get(part)
-            else:
-                return None
-
-    return value
+            return False, _("'{0}' in {1} is not a link or table, so it can't be followed").format(part, meta.name)
+    return True, ""
 
 
 def get_rules_for_doctype(doctype, event):
@@ -718,7 +933,50 @@ def get_doctype_fields(doctype):
             except Exception:
                 pass
 
+    # Deeper phone paths through child tables and people links, e.g.
+    # sales_team.sales_person.employee.cell_number (Sales Team › Sales Person › Employee › Cell Number)
+    seen = {f["value"] for f in fields}
+    for path, label in _phone_paths(meta):
+        if path not in seen:
+            seen.add(path)
+            fields.append({"value": path, "label": "{} (Phone)".format(label)})
+
     return fields
+
+
+# Links are only followed into these when looking for phone numbers several hops away
+_PEOPLE_DOCTYPES = frozenset({
+    "User", "Employee", "Customer", "Supplier", "Contact", "Lead", "Prospect", "Sales Person",
+    "Sales Partner", "Driver", "Student", "Guardian", "Member", "Patient", "Shareholder", "Volunteer",
+})
+
+
+def _phone_paths(meta, prefix="", label_prefix="", hops=0, visited=None, max_hops=3, limit=200):
+    """Phone-like fields reachable through child tables and people links (2+ levels deep)."""
+    visited = set(visited or ()) | {meta.name}
+    out = []
+    for df in meta.fields:
+        if len(out) >= limit:
+            break
+        path = prefix + df.fieldname
+        label = label_prefix + (df.label or df.fieldname)
+        if hops >= 1 and _is_phone_field(df):
+            out.append((path, label))
+        if hops >= max_hops:
+            continue
+        target = None
+        if df.fieldtype == "Table" and df.options:
+            target = df.options
+        elif df.fieldtype == "Link" and df.options in _PEOPLE_DOCTYPES:
+            target = df.options
+        if target and target not in visited:
+            try:
+                child_meta = frappe.get_meta(target)
+            except Exception:
+                continue
+            out.extend(_phone_paths(child_meta, path + ".", label + " › ", hops + 1, visited,
+                                    max_hops, limit - len(out)))
+    return out
 
 
 @frappe.whitelist()

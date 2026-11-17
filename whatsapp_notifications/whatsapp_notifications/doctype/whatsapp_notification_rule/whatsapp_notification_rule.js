@@ -123,6 +123,14 @@ frappe.ui.form.on('WhatsApp Notification Rule', {
         setup_template_help(frm);
     },
 
+    group_mentions: function (frm) {
+        setup_template_help(frm);
+    },
+
+    group_mention_fields: function (frm) {
+        setup_template_help(frm);
+    },
+
     select_mentions_button: function (frm) {
         show_mention_selection_dialog(frm);
     },
@@ -351,6 +359,7 @@ function setup_template_help(frm) {
         ['{{ format_currency(doc.grand_total, doc.currency) }}', __('Formatted amount')],
         ['{{ get_url() }}/app/' + frappe.router.slug(frm.doc.document_type || '') + '/{{ doc.name }}', __('Link to the document')],
         ['{{ mentions }}', __('Tags for group members. Appended at the end if not used.')],
+        ["{{ tag('supervisor') }}", __('Tag one person by role (set roles in Select Members to Tag)')],
     ];
     if (recurring) {
         variables.push(
@@ -365,6 +374,7 @@ function setup_template_help(frm) {
         field: 'message_template',
         doctype: frm.doc.document_type,
         mode: 'doc',
+        tag_keys: has_group ? () => frappe.whatsapp.tag_keys(frm, 'group_mentions', 'group_mention_fields') : null,
         variables: variables,
         snippets: function (ctx) {
             let title = ctx.title ? `{{ doc.${ctx.title} }}` : '{{ doc.name }}';

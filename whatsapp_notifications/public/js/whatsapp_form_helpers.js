@@ -89,11 +89,59 @@ frappe.whatsapp.remove_group = function(frm, opts) {
 };
 
 frappe.whatsapp.parse_number_list = function(value) {
-    return (value || '').split(/[\n,;\/]+/).map(v => v.replace(/\D/g, '')).filter(Boolean);
+    return frappe.whatsapp.parse_mention_entries(value).map(e => e.number);
+};
+
+/** 'Supervisor ' -> 'supervisor' (same rule as the server's normalize_tag_key). */
+frappe.whatsapp.normalize_tag_key = function(key) {
+    return String(key || '').trim().toLowerCase().replace(/[^a-z0-9_.]+/g, '_').replace(/^_+|_+$/g, '');
+};
+
+/** "supervisor: 258841234567" / "258841234567" lines -> [{role, number}] */
+frappe.whatsapp.parse_mention_entries = function(value) {
+    let out = [];
+    (value || '').split(/[\n,;]+/).forEach(chunk => {
+        chunk = chunk.trim();
+        if (!chunk) return;
+        let role = '';
+        let idx = chunk.indexOf(':');
+        if (idx >= 0) {
+            role = chunk.slice(0, idx).trim();
+            chunk = chunk.slice(idx + 1);
+        }
+        let number = chunk.replace(/\D/g, '');
+        if (number) out.push({ role: role, number: number });
+    });
+    return out;
 };
 
 /**
- * Pick group members to @mention into a newline-separated field.
+ * Keys usable in {{ tag('...') }} for a form: roles and untagged numbers from the
+ * members field, plus document field paths (rules' "Tag From Document Fields").
+ * Returns [{key, label, is_role}].
+ */
+frappe.whatsapp.tag_keys = function(frm, mentions_field, fields_field) {
+    let out = [];
+    let seen = {};
+    frappe.whatsapp.parse_mention_entries(frm.doc[mentions_field]).forEach(e => {
+        let key = e.role ? frappe.whatsapp.normalize_tag_key(e.role) : e.number;
+        if (!key || seen[key]) return;
+        seen[key] = true;
+        out.push({ key: key, label: e.role ? `@${e.role} (+${e.number})` : `+${e.number}`, is_role: !!e.role });
+    });
+    (frm.doc[fields_field] || '').split(',').map(f => f.trim()).filter(Boolean).forEach(f => {
+        let key = frappe.whatsapp.normalize_tag_key(f);
+        if (!key || seen[key]) return;
+        seen[key] = true;
+        out.push({ key: key, label: `@${f} (${__('from document')})`, is_role: true });
+    });
+    return out;
+};
+
+/**
+ * Pick group members to @mention, each with an optional role so templates can
+ * place them individually: {{ tag('supervisor') }}.
+ * Saves one line per member: "supervisor: 258841234567" (or just the number).
  * opts: { group_field: 'group_id', group_name_field: 'group_name', mentions_field: 'group_mentions' }
  */
 frappe.whatsapp.pick_group_members = function(frm, opts) {
@@ -126,28 +174,38 @@ frappe.whatsapp.pick_group_members = function(frm, opts) {
                 return;
             }
 
+            let esc = frappe.utils.escape_html;
             // Match saved numbers by suffix so "841234567" and "258841234567" are the same member
-            let current = frappe.whatsapp.parse_number_list(frm.doc[opts.mentions_field]);
             let same = (a, b) => a === b || a.endsWith(b) || b.endsWith(a);
-            let is_selected = n => current.some(c => same(n, c));
+            let current = frappe.whatsapp.parse_mention_entries(frm.doc[opts.mentions_field]);
+            let saved_for = n => current.find(c => same(n, c.number));
 
-            let options = participants.map(p => {
-                let label = p.name ? `${p.name} (+${p.number})` : `+${p.number}`;
-                if (p.admin) label += ` — ${__('admin')}`;
-                return { label: label, value: p.number, checked: is_selected(p.number) ? 1 : 0 };
-            });
+            // Numbers saved on the form that are no longer in the group are kept as they are
+            let orphans = current.filter(c => !participants.some(p => same(p.number, c.number)));
 
-            // Numbers saved on the form that are no longer in the group are kept
-            let orphans = current.filter(c => !participants.some(p => same(p.number, c)));
+            let rows = participants.map((p, i) => {
+                let saved = saved_for(p.number);
+                let label = p.name ? `${esc(p.name)} <span class="text-muted">+${esc(p.number)}</span>` : `+${esc(p.number)}`;
+                if (p.admin) label += ` <span class="text-muted small">· ${esc(__('admin'))}</span>`;
+                return `
+                    <div class="wa-member-row d-flex align-items-center" data-i="${i}" data-search="${esc(((p.name || '') + ' ' + p.number).toLowerCase())}"
+                         style="gap:10px;padding:6px 4px;border-bottom:1px solid var(--border-color, #eee);">
+                        <input type="checkbox" class="wa-member-check" ${saved ? 'checked' : ''} style="margin:0;">
+                        <div style="flex:1;min-width:0;">${label}</div>
+                        <input type="text" class="form-control input-xs wa-member-role" value="${esc(saved ? saved.role : '')}"
+                               placeholder="${esc(__('role, e.g. supervisor'))}" style="width:170px;">
+                    </div>`;
+            }).join('');
 
             let fields = [
                 { fieldname: 'search', fieldtype: 'Data', label: __('Search'), placeholder: __('Filter by name or number') },
-                { fieldname: 'members', fieldtype: 'MultiCheck', label: __('Members'), columns: 1, options: options }
+                { fieldname: 'help', fieldtype: 'HTML', options: `<p class="text-muted small mb-1">${__('Tick who to tag. Give a role to place that person anywhere in the message with {0}.', ["<code>{{ tag('supervisor') }}</code>"])}</p>` },
+                { fieldname: 'members', fieldtype: 'HTML', options: `<div class="wa-member-list" style="max-height:380px;overflow:auto;">${rows}</div>` }
             ];
             if (orphans.length) {
                 fields.push({
                     fieldname: 'orphans_html', fieldtype: 'HTML',
-                    options: `<p class="text-muted small">${__('Kept (not found in group)')}: ${frappe.utils.escape_html(orphans.join(', '))}</p>`
+                    options: `<p class="text-muted small mt-2">${__('Kept (not found in group)')}: ${esc(orphans.map(o => (o.role ? o.role + ': ' : '') + o.number).join(', '))}</p>`
                 });
             }
             if (r.message.hidden) {
@@ -163,21 +221,48 @@ frappe.whatsapp.pick_group_members = function(frm, opts) {
                 size: 'large',
                 primary_action_label: __('Save Selection'),
                 primary_action: function() {
-                    let selected = dialog.fields_dict.members.get_checked_options();
-                    frm.set_value(opts.mentions_field, orphans.concat(selected).join('\n'));
+                    let $list = dialog.$wrapper.find('.wa-member-list');
+                    let lines = orphans.map(o => (o.role ? o.role + ': ' : '') + o.number);
+                    let roles_seen = {};
+                    let duplicate_roles = [];
+                    $list.find('.wa-member-row').each(function() {
+                        if (!$(this).find('.wa-member-check').prop('checked')) return;
+                        let p = participants[$(this).data('i')];
+                        let role = ($(this).find('.wa-member-role').val() || '').trim().replace(/[:\n,;]/g, ' ').trim();
+                        let key = frappe.whatsapp.normalize_tag_key(role);
+                        if (key) {
+                            if (roles_seen[key]) duplicate_roles.push(role);
+                            roles_seen[key] = true;
+                        }
+                        lines.push(role ? `${role}: ${p.number}` : p.number);
+                    });
+                    frm.set_value(opts.mentions_field, lines.join('\n'));
                     dialog.hide();
-                    frappe.show_alert({ message: __('{0} member(s) will be tagged', [orphans.length + selected.length]), indicator: 'green' }, 3);
+                    frappe.show_alert({ message: __('{0} member(s) will be tagged', [lines.length]), indicator: 'green' }, 3);
+                    if (duplicate_roles.length) {
+                        frappe.show_alert({
+                            message: __('Several people share the role {0}: tag(...) will tag all of them.', [esc(duplicate_roles.join(', '))]),
+                            indicator: 'blue'
+                        }, 6);
+                    }
                 },
                 secondary_action_label: __('Clear All'),
                 secondary_action: function() {
-                    dialog.fields_dict.members.$wrapper.find('input[type=checkbox]').prop('checked', false);
+                    dialog.$wrapper.find('.wa-member-check').prop('checked', false);
+                }
+            });
+
+            // Typing a role ticks the member
+            dialog.$wrapper.on('input', '.wa-member-role', function() {
+                if ($(this).val().trim()) {
+                    $(this).closest('.wa-member-row').find('.wa-member-check').prop('checked', true);
                 }
             });
 
             dialog.fields_dict.search.$input.on('input', function() {
                 let q = ($(this).val() || '').toLowerCase().trim();
-                dialog.fields_dict.members.$wrapper.find('.checkbox').each(function() {
-                    $(this).toggle(!q || $(this).text().toLowerCase().includes(q));
+                dialog.$wrapper.find('.wa-member-row').each(function() {
+                    $(this).toggleClass('d-none', !!q && !String($(this).data('search')).includes(q));
                 });
             });
 
@@ -447,6 +532,14 @@ frappe.whatsapp.template_helper = function(frm, opts) {
             }
         }
 
+        // Tag individual people: {{ tag('supervisor') }}
+        let tag_keys = opts.tag_keys ? opts.tag_keys() : [];
+        if (tag_keys.length) {
+            let $tags = $(`<optgroup label="${esc(__('🏷️ Tag a person'))}"></optgroup>`);
+            tag_keys.forEach(t => add_option($tags, 'g:' + t.key, t.label, `{{ tag('${t.key}') }} `));
+            $select.append($tags);
+        }
+
         $select.on('change', function() {
             let key = $(this).val();
             if (key && exprs[key]) insert(exprs[key]);
@@ -455,6 +548,13 @@ frappe.whatsapp.template_helper = function(frm, opts) {
 
         // Snippets
         let snippets = (opts.snippets ? opts.snippets(ctx) : []).filter(Boolean);
+        let roles = tag_keys.filter(t => t.is_role);
+        if (roles.length) {
+            let lines = roles.slice(0, 3).map((t, i) =>
+                `{{ tag('${t.key}') }} ` + [__('acompanhe esta tarefa.'), __('garanta que está tudo a funcionar.'), __('para conhecimento.')][i]);
+            snippets.push({ label: __('Different task per person'), hint: __('One line per role; edit the text after each tag'),
+                text: lines.join('\n') + '\n' });
+        }
         let $snippets = $('<div class="d-flex flex-wrap mt-2" style="gap:6px;"></div>');
         snippets.forEach(s => {
             let $btn = $(`<button type="button" class="btn btn-default btn-xs"></button>`).text(s.label);
