@@ -361,6 +361,19 @@ function setup_template_help(frm) {
         ['{{ mentions }}', __('Tags for group members. Appended at the end if not used.')],
         ["{{ tag('supervisor') }}", __('Tag one person by role (set roles in Select Members to Tag)')],
     ];
+
+    // Tags from document fields: list the configured paths, or explain how to add one
+    let tag_fields = (frm.doc.group_mention_fields || '').split(',').map(f => f.trim()).filter(Boolean);
+    if (tag_fields.length) {
+        tag_fields.forEach(f => variables.push(
+            [`{{ tag('${f}') }}`, __('Tag the person in this document field (from Tag From Document Fields)')]
+        ));
+    } else {
+        variables.push([
+            "{{ tag('sales_team.sales_person.employee.cell_number') }}",
+            __('Tag the person from a document field: first add the field in Tag From Document Fields, then use its path here (links and tables are followed)')
+        ]);
+    }
     if (recurring) {
         variables.push(
             ['{{ reminder_number }}', __('1 on the first reminder, 2 on the second...')],
