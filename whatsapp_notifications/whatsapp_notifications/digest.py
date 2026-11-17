@@ -206,14 +206,39 @@ def resolve_person(report, value):
 # ============================================================
 
 def _list_link(report, extra_filters=None):
-    """Desk list URL with the simple '=' filters applied."""
-    from urllib.parse import urlencode
-    params = {}
+    """
+    Desk list URL that opens with exactly the digest's filters applied
+    (including the person's own filter for split digests).
+
+    Frappe's list view reads filters from the query string:
+        ?status=Unpaid                         -> status = Unpaid
+        ?outstanding_amount=[">",0]            -> outstanding_amount > 0
+        ?posting_date=["Timespan","this month"]
+        ?Sales Invoice Item.item_code=X        -> child-table filter
+    A field filtered twice is sent as repeated ["op", value] params.
+    """
+    from urllib.parse import urlencode, quote
+
+    by_key = {}
     for f in parse_list_filters(report.list_filters) + list(extra_filters or []):
-        if len(f) == 3 and f[1] == "=" and f[0] != ASSIGNED_TO:
-            params[f[0]] = f[2]
+        if len(f) == 4:
+            dt, field, op, value = f
+            key = field if dt == report.list_doctype else "{}.{}".format(dt, field)
+        else:
+            (field, op, value), key = f, f[0]
+        by_key.setdefault(key, []).append((str(op), value))
+
+    params = []
+    for key, conds in by_key.items():
+        for op, value in conds:
+            if op.strip() == "=" and len(conds) == 1 and not isinstance(value, (list, dict)):
+                params.append((key, "" if value is None else str(value)))
+            else:
+                params.append((key, json.dumps([op, value], ensure_ascii=False, default=str)))
+
     url = "{}/app/{}".format(frappe.utils.get_url(), frappe.scrub(report.list_doctype).replace("_", "-"))
-    return url + ("?" + urlencode(params) if params else "")
+    # quote (%20), not quote_plus (+): the desk router does not turn '+' back into spaces
+    return url + ("?" + urlencode(params, quote_via=quote) if params else "")
 
 
 def _default_template(report):
@@ -224,8 +249,8 @@ def _default_template(report):
         "📋 *{{{{ report_name }}}}*{{% if recipient_name %}} — {{{{ recipient_name }}}}{{% endif %}}\n"
         "{{{{ format_date(date) }}}} · {{{{ count }}}} registo(s)\n\n"
         "{{% for d in docs %}}• {{{{ d.name }}}}{title_part}\n{{% endfor %}}"
-        "{{% if more %}}…e mais {{{{ more }}}}\n{{% endif %}}"
-        "{{% if link %}}\n🔗 {{{{ link }}}}{{% endif %}}"
+        "{{% if more %}}…e mais {{{{ more }}}} — ver todas: {{{{ link }}}}\n"
+        "{{% elif show_link %}}\n🔗 {{{{ link }}}}{{% endif %}}"
     ).format(title_part=title_part)
 
 
@@ -246,7 +271,10 @@ def render_digest(report, data, recipient_name=None, extra_filters=None, mention
         "more": data["more"],
         "total": data["total"],
         "recipient_name": recipient_name,
-        "link": _list_link(report, extra_filters) if report.include_link else None,
+        # Always available (e.g. for "ver mais"); Include Report Link adds it to the
+        # default message even when everything fits.
+        "link": _list_link(report, extra_filters),
+        "show_link": bool(report.include_link),
         "mentions": format_mentions(mentions or []),
     })
     return frappe.render_template(report.message_template or _default_template(report), context)

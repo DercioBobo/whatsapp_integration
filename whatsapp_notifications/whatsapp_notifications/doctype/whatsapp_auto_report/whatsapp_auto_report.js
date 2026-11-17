@@ -157,14 +157,14 @@ function setup_list_template_help(frm) {
             ['{{ recipient_name }}', __('Person receiving it (when using Split by)')],
             ['{{ report_name }}', __('This report\'s name')],
             ['{{ format_date(date) }}', __('Today\'s date')],
-            ['{{ link }}', __('Link to the list in ERPNext (when Include Report Link is on)')],
+            ['{{ link }}', __('Link to the list in ERPNext with the same filters (per person when using Split by)')],
             ['{{ mentions }}', __('Tags for group members')],
         ],
         snippets: function (ctx) {
             let title = ctx.title ? ` — {{ d.${ctx.title} }}` : '';
             let amount = ctx.amount_df ? frappe.whatsapp.field_expr(ctx.amount_df, 'd', ctx.meta) : null;
             let total = ctx.amount ? `{{ format_currency(total('${ctx.amount}')) }}` : null;
-            let more = '{% if more %}…e mais {{ more }}{% endif %}';
+            let more = '{% if more %}…e mais {{ more }} — ver todas: {{ link }}{% endif %}';
             let list = `{% for d in docs %}• {{ d.name }}${title}\n{% endfor %}${more}`;
             let list_amount = `{% for d in docs %}• {{ d.name }}${title}${amount ? ' — ' + amount : ''}\n{% endfor %}${more}`;
             let header = '📋 *{{ report_name }}*{% if recipient_name %} — {{ recipient_name }}{% endif %} — {{ format_date(date) }}\n' +
@@ -178,7 +178,9 @@ function setup_list_template_help(frm) {
                 frm.doc.split_by_field && { label: __('Greeting (per person)'), text: 'Olá {{ recipient_name }}, estes são os seus pendentes:\n\n' },
                 { label: __('Nothing pending'), hint: __('Only when nothing matches (turn off "Send only if data")'),
                     text: '{% if not count %}Nada pendente hoje 🎉{% endif %}\n' },
-                frm.doc.include_link && { label: __('Link'), text: '{% if link %}🔗 {{ link }}{% endif %}\n' },
+                { label: __('"…e mais N" + link'), hint: __('Opens the full list in ERPNext with the same filters'),
+                    text: more + '\n' },
+                { label: __('Link'), hint: __('List in ERPNext with the same filters'), text: '🔗 {{ link }}\n' },
                 frm.doc.group_id && { label: __('Group tags'), text: '{{ mentions }}' },
             ];
         }
