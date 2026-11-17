@@ -312,7 +312,7 @@ def preview_recurring_run(rule_name, limit=10):
     """What the next run would send: schedule, documents, recipients and messages."""
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import (
-        apply_mentions_to_text, _get_mention_names
+        finalize_mentions, mention_numbers, _get_mention_names
     )
 
     frappe.has_permission("WhatsApp Notification Rule", "read", throw=True)
@@ -331,12 +331,12 @@ def preview_recurring_run(rule_name, limit=10):
         try:
             recipients = rule.get_recipients(doc)
             message = rule.render_message(doc)
-            mentions = rule.get_group_mentions(doc)
+            mention_map = rule.get_group_mention_map(doc)
             has_group = any(r["type"] == "group" for r in recipients)
-            if has_group and mentions:
-                message = apply_mentions_to_text(message, mentions)
+            if has_group and mention_map:
+                message, _tagged = finalize_mentions(message, mention_map, rule.templates_in_use())
                 if not mention_names:
-                    mention_names = _get_mention_names(rule, mentions)
+                    mention_names = _get_mention_names(rule, mention_numbers(mention_map))
         finally:
             rule._recurring_context = None
 

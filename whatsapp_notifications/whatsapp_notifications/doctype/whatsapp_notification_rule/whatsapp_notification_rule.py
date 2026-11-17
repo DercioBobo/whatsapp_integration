@@ -158,6 +158,16 @@ class WhatsAppNotificationRule(Document):
                             indicator="orange", title=_("Tags"))
 
     def validate_template(self):
+        for label, template in [
+            (_("Message Template"), self.message_template),
+            (_("Owner Message Template"), self.owner_message_template),
+            (_("Previous Day Template"), self.previous_day_template),
+            (_("Next Day Template"), self.next_day_template),
+            (_("Condition"), self.condition),
+        ]:
+            hint = jinja_syntax_hint(template)
+            if hint:
+                frappe.throw("{}: {}".format(label, hint), title=_("Template syntax"))
         self.validate_tags()
         dummy_ctx = _make_dummy_render_context()
         for label, template in [
@@ -402,6 +412,11 @@ class WhatsAppNotificationRule(Document):
 
         return build_mention_map(entries)
 
+    def templates_in_use(self):
+        """The template(s) render_message uses right now (incl. previous/next-day overrides)."""
+        override = getattr(self, "_template_override", None)
+        return [override or self.message_template or ""]
+
     def get_group_mentions(self, doc):
         """All numbers to @mention in group messages (de-duplicated)."""
         return mention_numbers(self.get_group_mention_map(doc))
@@ -471,7 +486,8 @@ class WhatsAppNotificationRule(Document):
             context["previous_values"] = {f: getattr(row_before, f, None) for f in cf} if row_before else {}
             context["row_before"] = row_before
             mention_map = {} if for_owner else self.get_group_mention_map(doc)
-            context["mentions"] = format_mentions(mention_numbers(mention_map))
+            # {{ mentions }} = members the template doesn't place itself with tag()
+            context["mentions"] = format_mentions(unplaced_numbers(mention_map, [template]))
             context["tag"], context["tags"] = make_tag_helpers(mention_map)
             context.update(self._extra_context())
             return frappe.render_template(template, context)
@@ -663,6 +679,71 @@ def unknown_tag_keys(templates, known_keys):
             if raw not in unknown:
                 unknown.append(raw)
     return unknown
+
+
+def placed_tag_keys(templates, mention_map):
+    """Keys of the mention map that the templates place themselves with tag()/tags.x."""
+    placed = set()
+    numbers_by_key = mention_map or {}
+    for template in templates:
+        for m in _TAG_CALL.finditer(template or ""):
+            raw = m.group(1) or m.group(2)
+            key = normalize_tag_key(raw)
+            if key in numbers_by_key:
+                placed.add(key)
+                continue
+            digits = re.sub(r"\D", "", raw)
+            if len(digits) >= 6:
+                for k, numbers in numbers_by_key.items():
+                    if any(n == digits or n.endswith(digits) for n in numbers):
+                        placed.add(k)
+    return placed
+
+
+def unplaced_numbers(mention_map, templates):
+    """Numbers of members the templates don't place themselves with tag()/tags.x."""
+    placed = placed_tag_keys(templates, mention_map)
+    out = []
+    for key, numbers in (mention_map or {}).items():
+        if key in placed:
+            continue
+        for n in numbers:
+            if n not in out:
+                out.append(n)
+    return out
+
+
+def jinja_syntax_hint(template):
+    """Friendly hint for JavaScript-isms that break Jinja (None when fine)."""
+    # Only look inside {{ ... }} / {% ... %}; plain message text may contain anything
+    t = " ".join(re.findall(r"\{[{%].*?[%}]\}", template or "", re.S))
+    if "!==" in t or "===" in t:
+        return _("Use <code>!=</code> and <code>==</code> (Jinja), not <code>!==</code> / <code>===</code> (JavaScript). "
+                 "To check that a field or table is filled, just use <code>{% if doc.fieldname %}</code>.")
+    if re.search(r"&&|\|\|", t):
+        return _("Use <code>and</code> / <code>or</code> (Jinja), not <code>&&</code> / <code>||</code> (JavaScript).")
+    return None
+
+
+def finalize_mentions(text, mention_map, templates):
+    """
+    Final group text + who to mention.
+
+    - Members the template places with tag('role') are tagged only where it put
+      them: if a condition skipped the tag, they are NOT appended or notified.
+    - Other members (no tag() for them) are appended at the end if the text
+      doesn't already contain them, as before.
+    - Only numbers that end up visible in the text are mentioned, so nobody gets
+      a hidden notification.
+
+    Returns (text, mentioned_numbers).
+    """
+    if not mention_map:
+        return text, []
+    text = apply_mentions_to_text(text, unplaced_numbers(mention_map, templates))
+    mentioned = [n for n in mention_numbers(mention_map)
+                 if re.search(r"@{}(?!\d)".format(re.escape(n)), text or "")]
+    return text, mentioned
 
 
 def format_mentions(numbers):
@@ -965,7 +1046,7 @@ def _phone_paths(meta, prefix="", label_prefix="", hops=0, visited=None, max_hop
         if hops >= max_hops:
             continue
         target = None
-        if df.fieldtype == "Table" and df.options:
+        if df.fieldtype in ("Table", "Table MultiSelect") and df.options:
             target = df.options
         elif df.fieldtype == "Link" and df.options in _PEOPLE_DOCTYPES:
             target = df.options
@@ -1087,10 +1168,12 @@ def preview_message(rule_name, docname):
         rule._recurring_context = get_recurring_context(rule, doc)
 
     recipients = rule.get_recipients(doc)
-    mentions = rule.get_group_mentions(doc)
+    mention_map = rule.get_group_mention_map(doc)
+    mentions = mention_numbers(mention_map)  # everyone who *could* be tagged
     has_group = any(r["type"] == "group" for r in recipients)
+    templates = rule.templates_in_use()
+    tagged = []  # who is actually tagged in the previewed message(s)
     mention_info = {
-        "mentions": mentions if has_group else [],
         "mention_everyone": bool(rule.mention_everyone) if has_group else False,
         "mention_names": _get_mention_names(rule, mentions) if has_group else {},
     }
@@ -1105,7 +1188,8 @@ def preview_message(rule_name, docname):
                 row_before=r.get("row_before")
             )
             if r["type"] == "group":
-                msg = apply_mentions_to_text(msg, mentions)
+                msg, row_tagged = finalize_mentions(msg, mention_map, templates)
+                tagged.extend(n for n in row_tagged if n not in tagged)
             row_previews.append({
                 "recipient": (rule.group_name or r["value"]) if r["type"] == "group" else r["value"],
                 "type": r["type"],
@@ -1117,7 +1201,8 @@ def preview_message(rule_name, docname):
         result = {
             "row_previews": row_previews,
             "doctype": rule.document_type,
-            "docname": docname
+            "docname": docname,
+            "mentions": tagged,
         }
         result.update(mention_info)
         return result
@@ -1131,11 +1216,12 @@ def preview_message(rule_name, docname):
             formatted_recipients.append(r["value"])
 
     if has_group:
-        message = apply_mentions_to_text(message, mentions)
+        message, tagged = finalize_mentions(message, mention_map, templates)
 
     result = {
         "message": message,
         "message_plain": strip_mentions_from_text(message, mentions),
+        "mentions": tagged,
         "recipients": formatted_recipients,
         "doctype": rule.document_type,
         "docname": docname

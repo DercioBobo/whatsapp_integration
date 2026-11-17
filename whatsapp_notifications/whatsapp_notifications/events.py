@@ -229,8 +229,11 @@ def process_rule(doc, rule, settings):
         )
 
     # Members to @mention when sending to a group
-    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import apply_mentions_to_text
-    group_mentions = rule.get_group_mentions(doc)
+    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import (
+        finalize_mentions, mention_numbers
+    )
+    mention_map = rule.get_group_mention_map(doc)
+    group_mentions = mention_numbers(mention_map)
     mention_everyone = bool(getattr(rule, "mention_everyone", 0))
 
     # Send to all recipients
@@ -253,10 +256,11 @@ def process_rule(doc, rule, settings):
                 recipient_name = rule.group_name or "Group"
 
             is_group = recipient_type == "group" or is_group_id(phone_or_group)
-            mentions = group_mentions if is_group else []
+            mentions = []
 
             if is_group:
-                text = apply_mentions_to_text(message, mentions) if mentions else message
+                # Conditional tag('role') stays conditional; only visible tags are mentioned
+                text, mentions = finalize_mentions(message, mention_map, rule.templates_in_use())
             else:
                 # Tags only work in groups; in a direct chat they'd show as bare numbers
                 from whatsapp_notifications.whatsapp_notifications.api import strip_mentions_from_text

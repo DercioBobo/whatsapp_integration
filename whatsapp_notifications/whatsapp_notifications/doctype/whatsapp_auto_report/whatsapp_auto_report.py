@@ -40,6 +40,11 @@ class WhatsAppAutoReport(Document):
             if self.split_by_field not in valid:
                 frappe.throw(_("Split by field '{}' is not valid for {}").format(self.split_by_field, self.list_doctype))
 
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import jinja_syntax_hint
+        hint = jinja_syntax_hint(self.message_template)
+        if hint:
+            frappe.throw(_("Message Template: {0}").format(hint), title=_("Template syntax"))
+
         # Dry-run the query and template so mistakes show up on save, not at 8 AM
         try:
             data = digest.get_digest_data(self)

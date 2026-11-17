@@ -257,7 +257,7 @@ def _default_template(report):
 def render_digest(report, data, recipient_name=None, extra_filters=None, mention_map=None):
     """mention_map ({role: [numbers]}) only for the group message; elsewhere tags render empty."""
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import (
-        get_template_context, format_mentions, make_tag_helpers, mention_numbers
+        get_template_context, format_mentions, make_tag_helpers, unplaced_numbers
     )
     context = get_template_context(None)
     context["tag"], context["tags"] = make_tag_helpers(mention_map or {})
@@ -277,7 +277,8 @@ def render_digest(report, data, recipient_name=None, extra_filters=None, mention
         # default message even when everything fits.
         "link": _list_link(report, extra_filters),
         "show_link": bool(report.include_link),
-        "mentions": format_mentions(mention_numbers(mention_map or {})),
+        # members the template doesn't place itself with tag()
+        "mentions": format_mentions(unplaced_numbers(mention_map or {}, [report.message_template or ""])),
     })
     return frappe.render_template(report.message_template or _default_template(report), context)
 
@@ -299,7 +300,7 @@ def build_digest_messages(report, split_limit=None):
                "missing_phone": [names], "split_total": n}
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import (
-        apply_mentions_to_text, mention_numbers
+        finalize_mentions
     )
 
     messages, missing_phone = [], []
@@ -316,8 +317,9 @@ def build_digest_messages(report, split_limit=None):
                                  "mentions": [], "mention_everyone": False})
             if report.group_id:
                 mention_map = group_mention_map(report)
-                mentions = mention_numbers(mention_map)
-                text = apply_mentions_to_text(render_digest(report, data, mention_map=mention_map), mentions)
+                text, mentions = finalize_mentions(
+                    render_digest(report, data, mention_map=mention_map), mention_map,
+                    [report.message_template or ""])
                 messages.append({"to": report.group_id, "label": report.group_name or report.group_id,
                                  "kind": "group", "message": text, "count": data["count"],
                                  "mentions": mentions, "mention_everyone": bool(report.mention_everyone)})
