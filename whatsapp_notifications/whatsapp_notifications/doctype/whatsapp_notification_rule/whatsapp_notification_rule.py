@@ -648,10 +648,11 @@ def make_tag_helpers(mention_map):
     """
     tags = {key: format_mentions(numbers) for key, numbers in (mention_map or {}).items()}
 
-    def tag(key):
-        found = tags.get(normalize_tag_key(key))
-        if found is not None:
-            return found
+    def tag(key, sep=" "):
+        """sep joins several people, e.g. tag('standby.user.mobile_no', ', ')."""
+        numbers = (mention_map or {}).get(normalize_tag_key(key))
+        if numbers is not None:
+            return format_mentions(numbers, sep)
         digits = re.sub(r"\D", "", str(key or ""))
         if len(digits) >= 6:
             for n in mention_numbers(mention_map):
@@ -662,7 +663,8 @@ def make_tag_helpers(mention_map):
     return tag, tags
 
 
-_TAG_CALL = re.compile(r"""tag\(\s*['"]([^'"]+)['"]\s*\)|tags\.([A-Za-z0-9_]+)""")
+# tag('key') or tag('key', ', ') or tags.key
+_TAG_CALL = re.compile(r"""tag\(\s*['"]([^'"]+)['"]\s*(?:,[^)]*)?\)|tags\.([A-Za-z0-9_]+)""")
 
 
 def unknown_tag_keys(templates, known_keys):
@@ -746,9 +748,9 @@ def finalize_mentions(text, mention_map, templates):
     return text, mentioned
 
 
-def format_mentions(numbers):
+def format_mentions(numbers, sep=" "):
     """Render numbers as WhatsApp tags: '@258841234567 @258821234567'."""
-    return " ".join("@{}".format(n) for n in (numbers or []))
+    return sep.join("@{}".format(n) for n in (numbers or []))
 
 
 def apply_mentions_to_text(text, numbers):
