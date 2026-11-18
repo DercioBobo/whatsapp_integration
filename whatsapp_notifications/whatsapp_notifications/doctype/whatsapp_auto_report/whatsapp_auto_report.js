@@ -42,11 +42,7 @@ frappe.ui.form.on('WhatsApp Auto Report', {
             }, __('Ações'));
 
             frm.add_custom_button(__('Pré-visualizar'), function () {
-                if (frm.doc.source === 'Document List') {
-                    show_document_list_preview(frm);
-                } else {
-                    show_preview_dialog(frm);
-                }
+                show_messages_preview(frm, frm.doc.source === 'Document List' ? 'preview_document_list' : 'preview_report');
             }, __('Ações'));
         }
 
@@ -149,6 +145,7 @@ frappe.ui.form.on('WhatsApp Auto Report', {
 
 function setup_list_template_help(frm) {
     let is_list = frm.doc.source === 'Document List';
+    if (!is_list) return setup_report_template_help(frm);
     frappe.whatsapp.template_helper(frm, {
         field: 'message_template',
         doctype: is_list ? frm.doc.list_doctype : null,
@@ -193,6 +190,43 @@ function setup_list_template_help(frm) {
     });
 }
 
+// ─── Report ───────────────────────────────────────────────────────────────────
+
+function setup_report_template_help(frm) {
+    frappe.whatsapp.template_helper(frm, {
+        field: 'message_template',
+        doctype: null,
+        mode: 'report',
+        tag_keys: frm.doc.group_id ? () => frappe.whatsapp.tag_keys(frm, 'group_mentions') : null,
+        variables: [
+            ['{{ report_name }}', __('Name of the Frappe report')],
+            ['{{ rows }}', __('Number of rows the report returned')],
+            ['{{ summary }}', __('First rows as text (needs "Include Data Summary")')],
+            ['{{ format_date(date) }}', __('Today\'s date')],
+            ['{{ datetime }}', __('Date and time of the run')],
+            ['{{ link }}', __('Link to the report in ERPNext with the same filters')],
+            ['{{ filters }}', __('The filters used (e.g. filters.company)')],
+            ['{{ mentions }}', __('Tags for group members')],
+            ["{{ tag('supervisor') }}", __('Tag one person by role (set roles in Select Members to Tag)')],
+        ],
+        snippets: function () {
+            let header = '📊 *{{ report_name }}* — {{ format_date(date) }}\n{{ rows }} registo(s)\n';
+            let files = (frm.doc.include_excel || frm.doc.include_pdf) ? '\n📎 Ficheiro(s) em anexo\n' : '';
+            return [
+                { label: __('Full message'), hint: __('Header, row count, summary and link'),
+                    text: header + '{% if summary %}\n{{ summary }}\n{% endif %}\n🔗 {{ link }}\n' + files },
+                { label: __('Header + count'), text: header },
+                { label: __('Summary'), hint: __('First rows as text (turn on "Include Data Summary")'),
+                    text: '{{ summary }}\n' },
+                { label: __('Nothing found'), hint: __('Only when the report is empty (turn off "Send only if data")'),
+                    text: '{% if not rows %}Sem registos hoje 🎉{% endif %}\n' },
+                { label: __('Link'), hint: __('Report in ERPNext with the same filters'), text: '🔗 {{ link }}\n' },
+                frm.doc.group_id && { label: __('Group tags'), text: '{{ mentions }}' },
+            ];
+        }
+    });
+}
+
 function describe_list_filters(frm) {
     if (frm.doc.source !== 'Document List') return;
     frappe.whatsapp.describe_filters(frm, { doctype: frm.doc.list_doctype, field: 'list_filters' });
@@ -210,9 +244,10 @@ function load_split_options(frm) {
     });
 }
 
-function show_document_list_preview(frm) {
+function show_messages_preview(frm, method) {
+    let is_report = method === 'preview_report';
     frm.call({
-        method: 'preview_document_list',
+        method: method,
         doc: frm.doc,
         freeze: true,
         freeze_message: __('A gerar pré-visualização...'),
@@ -228,13 +263,18 @@ function show_document_list_preview(frm) {
                     <div class="small mb-1 d-flex flex-wrap align-items-center" style="gap:10px;">
                         <span class="indicator-pill ${kind_color[m.kind]}">${kind_label[m.kind]}</span>
                         <b>${esc(m.label)}</b>
-                        <span class="text-muted">${__('{0} documento(s)', [m.count])}</span>
+                        <span class="text-muted">${is_report ? __('{0} registo(s)', [m.count]) : __('{0} documento(s)', [m.count])}</span>
                         ${m.mention_everyone ? `<span class="indicator-pill blue">${__('Marca todos')}</span>` : ''}
                     </div>
                     <div style="background:#DCF8C6;padding:8px;border-radius:6px;white-space:pre-wrap;font-family:system-ui,sans-serif;">${frappe.whatsapp.render_tags(m.message || '', p.mention_names || {})}</div>
                 </div>`).join('')
-                : `<p class="text-muted">${__('Nada a enviar: nenhum documento corresponde aos filtros.')}</p>`;
+                : `<p class="text-muted">${is_report
+                    ? __('Nada a enviar: o relatório não devolveu dados ("Enviar só se houver dados" está ativo).')
+                    : __('Nada a enviar: nenhum documento corresponde aos filtros.')}</p>`;
 
+            if (p.messages.length && p.attachments && p.attachments.length) {
+                body += `<p class="small">📎 ${__('Anexos enviados com cada mensagem')}: ${esc(p.attachments.join(', '))}</p>`;
+            }
             if (p.split_hidden) {
                 body += `<p class="text-muted small">${__('…e mais {0} mensagem(ns) pessoal(is)', [p.split_hidden])}</p>`;
             }
@@ -248,54 +288,6 @@ function show_document_list_preview(frm) {
                 message: body,
                 wide: true
             });
-        }
-    });
-}
-
-function show_preview_dialog(frm) {
-    frappe.call({
-        method: 'frappe.client.get_value',
-        args: {
-            doctype: 'Report',
-            filters: { name: frm.doc.report },
-            fieldname: ['ref_doctype', 'report_type']
-        },
-        callback: function (r) {
-            if (r.message) {
-                // Build preview
-                let filters = {};
-                try {
-                    if (frm.doc.filters) {
-                        filters = JSON.parse(frm.doc.filters);
-                    }
-                } catch (e) { }
-
-                let preview_html = `
-                    <div class="preview-container">
-                        <h5>${__('Configuração do Relatório')}</h5>
-                        <table class="table table-bordered">
-                            <tr><td><strong>${__('Relatório')}</strong></td><td>${frm.doc.report}</td></tr>
-                            <tr><td><strong>${__('Tipo')}</strong></td><td>${r.message.report_type}</td></tr>
-                            <tr><td><strong>${__('Frequência')}</strong></td><td>${frm.doc.frequency}</td></tr>
-                            <tr><td><strong>${__('Horário')}</strong></td><td>${frm.doc.send_time}</td></tr>
-                            <tr><td><strong>${__('Filtros')}</strong></td><td><pre>${JSON.stringify(filters, null, 2)}</pre></td></tr>
-                            <tr><td><strong>${__('Destinatários')}</strong></td><td><pre>${frm.doc.recipients || 'Nenhum'}</pre></td></tr>
-                        </table>
-                        <h5>${__('Anexos')}</h5>
-                        <ul>
-                            ${frm.doc.include_excel ? '<li>Excel (.xlsx)</li>' : ''}
-                            ${frm.doc.include_pdf ? '<li>PDF</li>' : ''}
-                            ${!frm.doc.include_excel && !frm.doc.include_pdf ? '<li>Apenas mensagem de texto</li>' : ''}
-                        </ul>
-                    </div>
-                `;
-
-                frappe.msgprint({
-                    title: __('Pré-visualização'),
-                    message: preview_html,
-                    wide: true
-                });
-            }
         }
     });
 }

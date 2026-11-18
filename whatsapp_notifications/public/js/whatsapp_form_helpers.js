@@ -454,7 +454,8 @@ frappe.whatsapp.guess_amount_field = function(meta) {
  * Render the helper under a template field.
  * opts: {
  *   field: 'message_template', doctype,
- *   mode: 'doc' (one document -> doc.x) | 'list' (Document List -> docs loop),
+ *   mode: 'doc' (one document -> doc.x) | 'list' (Document List -> docs loop)
+ *         | 'report' (saved report: no doctype, only variables/snippets/tags),
  *   variables: [[code, description], ...],
  *   snippets: function(ctx) -> [{label, text, hint}], ctx = {meta, title, amount, obj}
  * }
@@ -463,7 +464,7 @@ frappe.whatsapp.template_helper = function(frm, opts) {
     let fld = frm.get_field(opts.field);
     if (!fld) return;
     fld.$wrapper.find('.wa-template-helper').remove();
-    if (!opts.doctype) return;
+    if (!opts.doctype && opts.mode !== 'report') return;
 
     let esc = frappe.utils.escape_html;
 
@@ -479,35 +480,38 @@ frappe.whatsapp.template_helper = function(frm, opts) {
         frappe.show_alert({ message: __('Inserted into the template'), indicator: 'green' }, 2);
     };
 
-    frappe.model.with_doctype(opts.doctype, function() {
-        let meta = frappe.get_meta(opts.doctype);
+    let render = function(meta) {
         let obj = opts.mode === 'list' ? 'd' : 'doc';
-        let fields = meta.fields.filter(df => !frappe.whatsapp.LAYOUT_TYPES.includes(df.fieldtype) && df.fieldtype !== 'Table'
-            && df.fieldtype !== 'Table MultiSelect' && !df.hidden);
+        let fields = meta ? meta.fields.filter(df => !frappe.whatsapp.LAYOUT_TYPES.includes(df.fieldtype) && df.fieldtype !== 'Table'
+            && df.fieldtype !== 'Table MultiSelect' && !df.hidden) : [];
         let ctx = {
             meta: meta,
             obj: obj,
-            title: frappe.whatsapp.guess_title_field(meta),
-            amount: frappe.whatsapp.guess_amount_field(meta),
+            title: meta ? frappe.whatsapp.guess_title_field(meta) : null,
+            amount: meta ? frappe.whatsapp.guess_amount_field(meta) : null,
             amount_df: null,
         };
         ctx.amount_df = ctx.amount ? meta.fields.find(f => f.fieldname === ctx.amount) : null;
 
-        // Field picker
+        // Field picker (no document fields in report mode, only tags)
         let $select = $(`<select class="form-control input-xs" style="max-width:320px;display:inline-block;"></select>`);
-        $select.append(`<option value="">${esc(__('➕ Insert field…'))}</option>`);
-        let $fields = $(`<optgroup label="${esc(opts.mode === 'list' ? __('Field (inside the list loop)') : __('Field'))}"></optgroup>`);
+        $select.append(`<option value="">${esc(meta ? __('➕ Insert field…') : __('🏷️ Tag a person…'))}</option>`);
         let exprs = {};
         let add_option = ($group, key, label, expr) => {
             exprs[key] = expr;
             $group.append($('<option></option>').val(key).text(label));
         };
-        add_option($fields, 'f:name', `${__('ID')} (name)`, `{{ ${obj}.name }}`);
-        fields.forEach(df => add_option($fields, 'f:' + df.fieldname,
-            `${__(df.label || df.fieldname)} (${df.fieldtype})`, frappe.whatsapp.field_expr(df, obj, meta)));
-        $select.append($fields);
+        if (meta) {
+            let $fields = $(`<optgroup label="${esc(opts.mode === 'list' ? __('Field (inside the list loop)') : __('Field'))}"></optgroup>`);
+            add_option($fields, 'f:name', `${__('ID')} (name)`, `{{ ${obj}.name }}`);
+            fields.forEach(df => add_option($fields, 'f:' + df.fieldname,
+                `${__(df.label || df.fieldname)} (${df.fieldtype})`, frappe.whatsapp.field_expr(df, obj, meta)));
+            $select.append($fields);
+        }
 
-        if (opts.mode === 'list') {
+        if (!meta) {
+            // report mode: nothing document-specific to add
+        } else if (opts.mode === 'list') {
             let numeric = fields.filter(df => frappe.whatsapp.NUMERIC_TYPES.includes(df.fieldtype));
             if (numeric.length) {
                 let $totals = $(`<optgroup label="${esc(__('Total of all matching documents'))}"></optgroup>`);
@@ -578,12 +582,19 @@ frappe.whatsapp.template_helper = function(frm, opts) {
                     <div class="small text-muted">${esc(__('WhatsApp formatting:'))} <code>*bold*</code> <code>_italic_</code> <code>~strike~</code></div>
                 </details>
             </div>`);
-        $box.find('.wa-field-picker').append($select);
+        if (Object.keys(exprs).length) $box.find('.wa-field-picker').append($select);
         $box.find('.wa-snippets').append($snippets);
         $box.on('click', '.wa-insert-var', function(e) {
             e.preventDefault();
             insert($(this).data('code'));
         });
+        fld.$wrapper.find('.wa-template-helper').remove();
         fld.$wrapper.append($box);
-    });
+    };
+
+    if (opts.doctype) {
+        frappe.model.with_doctype(opts.doctype, () => render(frappe.get_meta(opts.doctype)));
+    } else {
+        render(null);
+    }
 };

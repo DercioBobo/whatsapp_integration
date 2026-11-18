@@ -253,8 +253,7 @@
             "fieldtype": "Data",
             "label": "WhatsApp Group ID",
             "read_only": 1,
-            "depends_on": "eval:doc.source=='Document List'",
-            "description": "The group receives the full list"
+            "description": "The group receives the full report / list (use Select Group)"
         },
         {
             "fieldname": "group_name",
@@ -266,8 +265,7 @@
         {
             "fieldname": "select_group_button",
             "fieldtype": "Button",
-            "label": "Select Group",
-            "depends_on": "eval:doc.source=='Document List'"
+            "label": "Select Group"
         },
         {
             "fieldname": "column_break_recipients",
@@ -293,20 +291,20 @@
             "fieldname": "mention_everyone",
             "fieldtype": "Check",
             "label": "Tag Everyone in Group",
-            "depends_on": "eval:doc.source=='Document List' && doc.group_id"
+            "depends_on": "eval:doc.group_id"
         },
         {
             "fieldname": "group_mentions",
             "fieldtype": "Small Text",
             "label": "Members to Tag",
-            "depends_on": "eval:doc.source=='Document List' && doc.group_id",
+            "depends_on": "eval:doc.group_id",
             "description": "One per line: a number, or role: number (e.g. supervisor: 258841234567). Use {{ tag('supervisor') }} in the template to tag that person in a specific place. Easiest: use Select Members to Tag."
         },
         {
             "fieldname": "select_mentions_button",
             "fieldtype": "Button",
             "label": "Select Members to Tag",
-            "depends_on": "eval:doc.source=='Document List' && doc.group_id"
+            "depends_on": "eval:doc.group_id"
         },
         {
             "fieldname": "section_format",
@@ -355,7 +353,7 @@
             "fieldtype": "Code",
             "label": "Message Template",
             "options": "Jinja",
-            "description": "Jinja2 template. Report: {{ report_name }}, {{ date }}, {{ rows }}, {{ summary }}. Document List: {{ docs }}, {{ count }}, {{ more }}, {{ total('field') }}, {{ recipient_name }}, {{ link }}, {{ mentions }}. Leave empty for a default message."
+            "description": "Jinja2 template. Report: {{ report_name }}, {{ date }}, {{ rows }}, {{ summary }}, {{ link }}, {{ mentions }}, {{ tag('role') }}. Document List: {{ docs }}, {{ count }}, {{ more }}, {{ total('field') }}, {{ recipient_name }}, {{ link }}, {{ mentions }}. Leave empty for a default message."
         },
         {
             "fieldname": "include_summary",
@@ -399,7 +397,7 @@
     ],
     "index_web_pages_for_search": 1,
     "links": [],
-    "modified": "2026-11-17 12:00:00.000000",
+    "modified": "2026-11-18 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Auto Report",

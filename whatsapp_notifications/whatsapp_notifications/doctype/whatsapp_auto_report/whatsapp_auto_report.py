@@ -21,8 +21,18 @@ class WhatsAppAutoReport(Document):
         if not self.is_document_list():
             if not self.report:
                 frappe.throw(_("Report is required"))
-            if not (self.recipients or "").strip():
-                frappe.throw(_("Recipients are required"))
+            if not ((self.recipients or "").strip() or self.group_id):
+                frappe.throw(_("Add recipients or a WhatsApp group"))
+            self.validate_template_syntax()
+            # Render with empty data so template mistakes show up on save, not at 8 AM
+            # (the report itself is not run here: it can be slow)
+            try:
+                self.build_message({"columns": [], "result": []})
+            except frappe.ValidationError:
+                raise
+            except Exception as e:
+                frappe.throw(_("Message Template could not be rendered: {}").format(e), title=_("Template"))
+            self.validate_tags()
             return
 
         from whatsapp_notifications.whatsapp_notifications import digest
@@ -40,10 +50,7 @@ class WhatsAppAutoReport(Document):
             if self.split_by_field not in valid:
                 frappe.throw(_("Split by field '{}' is not valid for {}").format(self.split_by_field, self.list_doctype))
 
-        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import jinja_syntax_hint
-        hint = jinja_syntax_hint(self.message_template)
-        if hint:
-            frappe.throw(_("Message Template: {0}").format(hint), title=_("Template syntax"))
+        self.validate_template_syntax()
 
         # Dry-run the query and template so mistakes show up on save, not at 8 AM
         try:
@@ -55,6 +62,12 @@ class WhatsAppAutoReport(Document):
             frappe.throw(_("Document List could not be generated: {}").format(e))
 
         self.validate_tags()
+
+    def validate_template_syntax(self):
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import jinja_syntax_hint
+        hint = jinja_syntax_hint(self.message_template)
+        if hint:
+            frappe.throw(_("Message Template: {0}").format(hint), title=_("Template syntax"))
 
     def validate_tags(self):
         """Warn when the template tags a role that no member has."""
@@ -264,6 +277,40 @@ class WhatsAppAutoReport(Document):
         }
 
     @frappe.whitelist()
+    def preview_report(self):
+        """Run the report and return every message the next run would send (nothing is sent)."""
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import _get_mention_names
+
+        if self.is_document_list():
+            return self.preview_document_list()
+
+        report_data = self.get_report_data()
+        rows = len((report_data or {}).get("result") or [])
+        skipped = bool(self.send_if_data and not rows)
+        messages = [] if skipped else self.build_report_messages(report_data)
+
+        group_msg = next((m for m in messages if m["kind"] == "group"), None)
+        mention_names = {}
+        if group_msg and group_msg["mentions"]:
+            mention_names = _get_mention_names(frappe._dict(group_id=self.group_id), group_msg["mentions"])
+
+        attachments = []
+        if self.include_excel:
+            attachments.append("{}.xlsx".format(self.report_name.replace(" ", "_")))
+        if self.include_pdf:
+            attachments.append("{}.pdf".format(self.report_name.replace(" ", "_")))
+
+        return {
+            "messages": messages,
+            "missing_phone": [],
+            "split_hidden": 0,
+            "mention_names": mention_names,
+            "rows": rows,
+            "skipped_no_data": skipped,
+            "attachments": attachments,
+        }
+
+    @frappe.whitelist()
     def generate_and_send(self):
         """Generate report and send via WhatsApp"""
         if self.is_document_list():
@@ -283,75 +330,57 @@ class WhatsAppAutoReport(Document):
             # Generate report data
             report_data = self.get_report_data()
 
-            if not report_data and self.send_if_data:
+            # A report with no rows still returns {"columns": [...], "result": []}
+            if self.send_if_data and not (report_data and report_data.get("result")):
                 self.db_set("last_status", "Skipped - No data")
+                frappe.db.commit()
                 return {"success": True, "skipped": True, "reason": "No data"}
 
-            # Build message
-            message = self.build_message(report_data)
+            messages = self.build_report_messages(report_data)
+            attachments = self.build_attachments(report_data)
 
-            # Generate attachments
-            attachments = []
-
-            if self.include_excel:
-                excel_data = self.generate_excel(report_data)
-                if excel_data:
-                    attachments.append({
-                        "type": "excel",
-                        "data": excel_data,
-                        "filename": "{}.xlsx".format(self.report_name.replace(" ", "_"))
-                    })
-
-            if self.include_pdf:
-                pdf_data = self.generate_pdf(report_data)
-                if pdf_data:
-                    attachments.append({
-                        "type": "pdf",
-                        "data": pdf_data,
-                        "filename": "{}.pdf".format(self.report_name.replace(" ", "_"))
-                    })
-
-            # Send to all recipients
-            recipients = self.get_recipients()
+            # Send to the fixed recipients and the group
             sent_count = 0
             errors = []
 
-            for phone in recipients:
+            for m in messages:
                 try:
                     if attachments:
-                        # Send with attachment (use first attachment as primary)
                         result = send_report_with_attachment(
-                            phone=phone,
-                            message=message,
+                            phone=m["to"],
+                            message=m["message"],
                             attachments=attachments,
-                            report_name=self.report_name
+                            report_name=self.report_name,
+                            mentions=m["mentions"],
+                            mention_everyone=m["mention_everyone"]
                         )
                     else:
-                        # Send text only
                         from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_notification
                         result = send_whatsapp_notification(
-                            phone=phone,
-                            message=message,
+                            phone=m["to"],
+                            message=m["message"],
                             reference_doctype="WhatsApp Auto Report",
                             reference_name=self.name,
                             notification_rule=None,
-                            recipient_name=None
+                            recipient_name=m["label"],
+                            mentions=m["mentions"],
+                            mention_everyone=m["mention_everyone"]
                         )
 
                     if result.get("success") or result.get("queued"):
                         sent_count += 1
                     else:
-                        errors.append("{}: {}".format(phone, result.get("error", "Unknown error")))
+                        errors.append("{}: {}".format(m["label"], result.get("error", "Unknown error")))
 
                 except Exception as e:
-                    errors.append("{}: {}".format(phone, str(e)))
+                    errors.append("{}: {}".format(m["label"], str(e)))
 
             # Update status
             self.db_set("last_sent", now_datetime())
 
             if sent_count > 0:
                 self.db_set("last_status", "Sent to {} recipients".format(sent_count))
-                self.db_set("last_error", None)
+                self.db_set("last_error", "\n".join(errors[:5]) or None)
             else:
                 self.db_set("last_status", "Failed")
                 self.db_set("last_error", "\n".join(errors[:5]))  # First 5 errors
@@ -447,30 +476,90 @@ class WhatsAppAutoReport(Document):
 
         return recipients
 
-    def build_message(self, report_data):
-        """Build the message to send"""
-        context = {
+    def build_attachments(self, report_data):
+        attachments = []
+        if self.include_excel:
+            excel_data = self.generate_excel(report_data)
+            if excel_data:
+                attachments.append({
+                    "type": "excel",
+                    "data": excel_data,
+                    "filename": "{}.xlsx".format(self.report_name.replace(" ", "_"))
+                })
+        if self.include_pdf:
+            pdf_data = self.generate_pdf(report_data)
+            if pdf_data:
+                attachments.append({
+                    "type": "pdf",
+                    "data": pdf_data,
+                    "filename": "{}.pdf".format(self.report_name.replace(" ", "_"))
+                })
+        return attachments
+
+    def build_report_messages(self, report_data):
+        """
+        Every message a Report run sends: one per fixed recipient + one for the group.
+        Tags only render in the group message.
+
+        Returns: [{to, label, kind, message, count, mentions, mention_everyone}]
+        """
+        from whatsapp_notifications.whatsapp_notifications.digest import group_mention_map
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import (
+            finalize_mentions
+        )
+
+        count = len((report_data or {}).get("result") or [])
+        messages = []
+
+        fixed = self.get_recipients()
+        if fixed:
+            text = self.build_message(report_data)
+            for phone in fixed:
+                messages.append({"to": phone, "label": phone, "kind": "fixed", "message": text,
+                                 "count": count, "mentions": [], "mention_everyone": False})
+
+        if self.group_id:
+            mention_map = group_mention_map(self)
+            text, mentions = finalize_mentions(
+                self.build_message(report_data, mention_map=mention_map), mention_map,
+                [self.message_template or ""])
+            messages.append({"to": self.group_id, "label": self.group_name or self.group_id,
+                             "kind": "group", "message": text, "count": count,
+                             "mentions": mentions, "mention_everyone": bool(self.mention_everyone)})
+
+        return messages
+
+    def build_message(self, report_data, mention_map=None):
+        """Build the message text. mention_map ({role: [numbers]}) only for the group message."""
+        from urllib.parse import urlencode
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import (
+            get_template_context, format_mentions, make_tag_helpers, unplaced_numbers
+        )
+
+        # Same helpers as Document List / notification templates (format_date, format_currency...)
+        context = get_template_context(None)
+        context.pop("doc", None)
+        context["tag"], context["tags"] = make_tag_helpers(mention_map or {})
+        context.update({
             "report_name": self.report,
             "date": today(),
             "datetime": now_datetime().strftime("%Y-%m-%d %H:%M"),
             "rows": len(report_data.get("result", [])) if report_data else 0,
             "summary": "",
-            "filters": self.get_filters()
-        }
+            "filters": self.get_filters(),
+            # Always available to templates; Include Report Link adds it to the default message
+            "link": "{}/app/query-report/{}?{}".format(
+                frappe.utils.get_url(),
+                (self.report or "").replace(" ", "%20"),
+                urlencode(self.get_filters())
+            ),
+            # Members the template doesn't place itself with tag()
+            "mentions": format_mentions(unplaced_numbers(mention_map or {}, [self.message_template or ""])),
+        })
 
         # Build summary if enabled
         if self.include_summary and report_data:
             context["summary"] = self.build_summary(report_data)
-
-        # Build report link if enabled
-        if self.include_link:
-            from urllib.parse import urlencode
-            filters_str = urlencode(self.get_filters())
-            context["link"] = "{}/app/query-report/{}?{}".format(
-                frappe.utils.get_url(),
-                self.report.replace(" ", "%20"),
-                filters_str
-            )
 
         # Render custom template or use default
         if self.message_template:
@@ -493,7 +582,7 @@ class WhatsAppAutoReport(Document):
         else:
             message += "Nenhum dado encontrado para os filtros aplicados.\n"
 
-        if context.get("link"):
+        if self.include_link and context.get("link"):
             message += "\n🔗 Ver relatório completo:\n{}\n".format(context["link"])
 
         if self.include_excel or self.include_pdf:
@@ -678,19 +767,22 @@ class WhatsAppAutoReport(Document):
         return "".join(rows_html)
 
 
-def send_report_with_attachment(phone, message, attachments, report_name):
-    """Send report with attachment via WhatsApp"""
+def send_report_with_attachment(phone, message, attachments, report_name, mentions=None, mention_everyone=False):
+    """Send report text + attachments via WhatsApp (phone number or group ID)."""
     import base64
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
-    from whatsapp_notifications.whatsapp_notifications.api import make_http_request
+    from whatsapp_notifications.whatsapp_notifications.api import (
+        make_http_request, is_group_id, post_with_mention_fallback
+    )
 
     settings = get_settings()
 
     if not settings.get("enabled"):
         return {"success": False, "error": "WhatsApp notifications disabled"}
 
-    formatted_phone = format_phone_number(phone)
+    is_group = is_group_id(phone)
+    formatted_phone = phone if is_group else format_phone_number(phone)
     if not formatted_phone:
         return {"success": False, "error": "Invalid phone number"}
 
@@ -712,8 +804,14 @@ def send_report_with_attachment(phone, message, attachments, report_name):
             "number": formatted_phone,
             "text": message
         }
+        if is_group and mentions:
+            payload["mentioned"] = list(mentions)
+        if is_group and mention_everyone:
+            payload["mentionsEveryOne"] = True
 
-        response = make_http_request(url, method="POST", headers=headers, data=payload)
+        # Retries once without tags if tagging fails, so the report still arrives
+        post_with_mention_fallback(url, headers, payload,
+                                   frappe._dict(name="Auto Report {}".format(report_name)), "text")
         results.append({"type": "text", "success": True})
 
     except Exception as e:
