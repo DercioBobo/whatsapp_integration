@@ -23,10 +23,10 @@
         "first_response_wins",
         "section_message",
         "message_template",
+        "link_intro_text",
         "section_options",
         "response_options",
-        "options_header_text",
-        "options_footer_text",
+        "action_user",
         "section_expiry",
         "expiry_hours",
         "column_break_expiry",
@@ -34,9 +34,6 @@
         "section_confirmation",
         "send_confirmation",
         "confirmation_template",
-        "section_invalid_response",
-        "send_invalid_response_help",
-        "invalid_response_template",
         "section_already_resolved",
         "already_resolved_template"
     ],
@@ -139,7 +136,7 @@
             "fieldtype": "Check",
             "label": "First Response Wins",
             "default": "1",
-            "description": "When multiple recipients: first valid response is accepted, others are ignored. If unchecked, all must respond."
+            "description": "When multiple recipients: the first response is accepted and the other recipients' links stop working."
         },
         {
             "fieldname": "section_message",
@@ -152,7 +149,14 @@
             "label": "Message Template",
             "reqd": 1,
             "options": "Jinja",
-            "description": "Jinja2 template for approval message. Use {{ doc.fieldname }} for document fields. The response options will be automatically appended."
+            "description": "Jinja2 template for the approval message. Use {{ doc.fieldname }} for document fields and {{ approval_link }} to place the recipient's personal approval link. If {{ approval_link }} is not used, the link is appended at the end after the Link Intro Text."
+        },
+        {
+            "fieldname": "link_intro_text",
+            "fieldtype": "Data",
+            "label": "Link Intro Text",
+            "default": "Review and respond here:",
+            "description": "Text shown before the approval link when the template doesn't use {{ approval_link }}"
         },
         {
             "fieldname": "section_options",
@@ -165,21 +169,14 @@
             "label": "Response Options",
             "options": "WhatsApp Approval Option",
             "reqd": 1,
-            "description": "Define the numbered options the user can reply with"
+            "description": "Each option becomes a button on the approval page the recipient opens from the link"
         },
         {
-            "fieldname": "options_header_text",
-            "fieldtype": "Data",
-            "label": "Options Header Text",
-            "default": "Please respond with:",
-            "description": "Text shown before the options list"
-        },
-        {
-            "fieldname": "options_footer_text",
-            "fieldtype": "Data",
-            "label": "Options Footer Text",
-            "default": "Reply with the number of your choice.",
-            "description": "Text shown after the options list"
+            "fieldname": "action_user",
+            "fieldtype": "Link",
+            "label": "Run Actions As",
+            "options": "User",
+            "description": "The approval page is opened without login, so the selected option's action (workflow action, field update, method) runs as this user. It must have the roles the workflow transition requires. Leave empty for Administrator."
         },
         {
             "fieldname": "section_expiry",
@@ -215,7 +212,7 @@
             "fieldname": "send_confirmation",
             "fieldtype": "Check",
             "label": "Send Confirmation",
-            "description": "Send a confirmation message after the user responds"
+            "description": "Also send a WhatsApp confirmation after the recipient responds on the approval page"
         },
         {
             "fieldname": "confirmation_template",
@@ -226,30 +223,9 @@
             "description": "Jinja2 template for confirmation message. Available variables: {{ doc }}, {{ option_label }}, {{ action_result }}"
         },
         {
-            "fieldname": "section_invalid_response",
-            "fieldtype": "Section Break",
-            "label": "Invalid Response Handling",
-            "collapsible": 1
-        },
-        {
-            "default": "1",
-            "fieldname": "send_invalid_response_help",
-            "fieldtype": "Check",
-            "label": "Send Help on Invalid Response",
-            "description": "Send a help message when user replies with invalid text"
-        },
-        {
-            "fieldname": "invalid_response_template",
-            "fieldtype": "Code",
-            "label": "Invalid Response Template",
-            "options": "Jinja",
-            "depends_on": "send_invalid_response_help",
-            "description": "Custom message for invalid responses. Available: {{ received_text }}, {{ options }}. Leave empty for default."
-        },
-        {
             "fieldname": "section_already_resolved",
             "fieldtype": "Section Break",
-            "label": "Already Resolved Message",
+            "label": "Already Resolved Text",
             "collapsible": 1,
             "depends_on": "eval:doc.first_response_wins"
         },
@@ -259,7 +235,7 @@
             "label": "Already Resolved Template",
             "options": "Jinja",
             "depends_on": "eval:doc.first_response_wins",
-            "description": "Message sent to other recipients when the approval was already resolved by the first respondent. Available: {{ doc }}. Leave empty for default."
+            "description": "Shown on the approval page to other recipients who open their link after the approval was already resolved. Available: {{ doc }}. Leave empty for default."
         }
     ],
     "index_web_pages_for_search": 1,
@@ -269,7 +245,7 @@
             "link_fieldname": "approval_template"
         }
     ],
-    "modified": "2024-01-01 00:00:00.000000",
+    "modified": "2026-11-27 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Approval Template",

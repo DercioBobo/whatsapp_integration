@@ -1,10 +1,45 @@
 """
 WhatsApp Notifications - Approval Logic
-Handles sending approval requests and processing responses
+Handles sending approval requests and processing responses.
+
+Each recipient receives a WhatsApp message with a personal, single-use link
+(/approval?t=<token>). The link opens a page showing the document and one
+button per response option; nothing is executed until a button is pressed
+(WhatsApp link previews and phone scanners only ever GET the page).
 """
+import hashlib
+import secrets
+
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
+
+
+APPROVAL_PAGE_ROUTE = "approval"
+
+
+def hash_token(token):
+    """Only the SHA-256 of a token is stored, so a DB read never reveals a usable link"""
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def generate_token():
+    return secrets.token_urlsafe(32)
+
+
+def get_approval_link(token):
+    return frappe.utils.get_url("/{}?t={}".format(APPROVAL_PAGE_ROUTE, token))
+
+
+def get_request_by_token(token):
+    """Return the WhatsApp Approval Request for a link token, or None"""
+    if not token or len(token) > 128:
+        return None
+
+    name = frappe.db.get_value(
+        "WhatsApp Approval Request", {"token_hash": hash_token(token)}, "name"
+    )
+    return frappe.get_doc("WhatsApp Approval Request", name) if name else None
 
 
 def send_approval_request(doctype, docname, template_name, phone=None, enqueue=True):
@@ -93,9 +128,6 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
             from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_approval_request.whatsapp_approval_request import cancel_pending_requests_for_document
             cancel_pending_requests_for_document(doctype, docname, "New approval request sent")
 
-        # Render message
-        message = template.render_message(doc)
-
         # Create approval requests for all recipients
         approval_requests = []
         for recipient_phone in recipients:
@@ -108,6 +140,10 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
                 )
                 continue
 
+            # Each recipient gets their own link, so "who responded" is known
+            # and one recipient's link can't act on another's request
+            token = generate_token()
+
             # Create approval request record
             approval_request = frappe.get_doc({
                 "doctype": "WhatsApp Approval Request",
@@ -117,10 +153,13 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
                 "reference_name": docname,
                 "recipient_phone": recipient_phone,
                 "formatted_phone": formatted_phone,
-                "recipient_name": get_recipient_name_from_document(doc)
+                "recipient_name": get_recipient_name_from_document(doc),
+                "token_hash": hash_token(token)
             })
             approval_request.insert(ignore_permissions=True)
             approval_requests.append(approval_request)
+
+            message = template.render_message(doc, get_approval_link(token))
 
             # Send WhatsApp message
             result = send_whatsapp_notification(
@@ -181,11 +220,14 @@ def process_approval_response(approval_request_name, option_number, response_tex
     """
     Process an approval response
 
+    The caller is responsible for authenticating the responder (the approval
+    page does it with the link token).
+
     Args:
         approval_request_name: WhatsApp Approval Request name
         option_number: Selected option number
-        response_text: Raw response text
-        response_from: Phone number that responded
+        response_text: Free-text comment left by the responder (optional)
+        response_from: Who responded (stored for audit)
 
     Returns:
         dict: Result with success status
@@ -196,6 +238,14 @@ def process_approval_response(approval_request_name, option_number, response_tex
         settings = get_settings()
 
         approval_request = frappe.get_doc("WhatsApp Approval Request", approval_request_name)
+
+        # Serialize responses for the same document: two approvers (or a
+        # double-tap) clicking at once must not both run the action.
+        frappe.db.sql(
+            "select name from `tab{}` where name=%s for update".format(approval_request.reference_doctype),
+            approval_request.reference_name
+        )
+        approval_request.reload()
 
         # Check if already processed (duplicate response)
         if approval_request.status != "Pending":
@@ -211,19 +261,6 @@ def process_approval_response(approval_request_name, option_number, response_tex
         if approval_request.is_expired():
             approval_request.mark_expired()
             return {"success": False, "error": _("This approval request has expired")}
-
-        # Verify phone number matches (security check)
-        if not verify_phone_match(approval_request.formatted_phone, response_from):
-            frappe.log_error(
-                "Phone mismatch for approval {}: expected {}, got {}".format(
-                    approval_request_name, approval_request.formatted_phone, response_from
-                ),
-                "WhatsApp Approval Security"
-            )
-            return {
-                "success": False,
-                "error": _("Response must come from the original recipient's phone number")
-            }
 
         # Get template and option
         template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
@@ -245,7 +282,7 @@ def process_approval_response(approval_request_name, option_number, response_tex
         )
 
         # Execute the action
-        action_result = execute_action(doc, option)
+        action_result = execute_action_as(doc, option, template.action_user)
 
         if action_result.get("success"):
             # Determine status based on option label
@@ -357,6 +394,26 @@ def execute_action(doc, option):
             return {"success": False, "error": _("Unknown action type: {0}").format(option.action_type)}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def execute_action_as(doc, option, user=None):
+    """
+    Run execute_action as a real user. The approval page is opened without
+    login (session user Guest), and Guest can't pass workflow role checks, so
+    the action runs as the template's Action User (default: Administrator).
+    """
+    original_user = frappe.session.user
+    # set_user() also resets session.data and form_dict; keep the caller's
+    # so a logged-in visitor's session (csrf token etc.) isn't wiped
+    saved_session_data = frappe.local.session.data
+    saved_form_dict = frappe.local.form_dict
+    try:
+        frappe.set_user(user or "Administrator")
+        return execute_action(doc, option)
+    finally:
+        frappe.set_user(original_user)
+        frappe.local.session.data = saved_session_data
+        frappe.local.form_dict = saved_form_dict
 
 
 def execute_workflow_action(doc, action_name):
@@ -553,37 +610,6 @@ def get_recipient_name_from_document(doc):
     return None
 
 
-def verify_phone_match(expected_phone, actual_phone):
-    """
-    Verify that the response phone matches the expected phone
-
-    Args:
-        expected_phone: Expected formatted phone number
-        actual_phone: Actual phone number from response
-
-    Returns:
-        bool: True if phones match
-    """
-    from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
-
-    if not expected_phone or not actual_phone:
-        return False
-
-    # Format the actual phone for comparison
-    formatted_actual = format_phone_number(actual_phone)
-
-    if not formatted_actual:
-        # Try direct comparison if formatting fails
-        # Clean both numbers for comparison
-        clean_expected = ''.join(filter(str.isdigit, str(expected_phone)))
-        clean_actual = ''.join(filter(str.isdigit, str(actual_phone)))
-
-        # Check if one ends with the other (handle country code differences)
-        return clean_expected.endswith(clean_actual[-9:]) or clean_actual.endswith(clean_expected[-9:])
-
-    return expected_phone == formatted_actual
-
-
 def determine_status_from_option(option_label):
     """
     Determine the approval request status based on option label
@@ -725,3 +751,160 @@ def handle_document_event(doc, event):
                 )
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Approval page (/approval?t=<token>) - no login required
+# ---------------------------------------------------------------------------
+
+def get_approval_page_state(token):
+    """
+    Build everything the approval page shows for a token. Read-only: opening
+    the link never changes anything.
+
+    Returns:
+        dict with "state" in: invalid, pending, expired, done, resolved_by_other,
+        cancelled, error - plus display data
+    """
+    from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
+
+    approval_request = get_request_by_token(token)
+    if not approval_request:
+        return {"state": "invalid"}
+
+    if not get_settings().get("enabled"):
+        return {"state": "invalid"}
+
+    template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
+
+    out = {
+        "reference_doctype": approval_request.reference_doctype,
+        "reference_name": approval_request.reference_name,
+        "status": approval_request.status,
+        "responded_at": approval_request.responded_at,
+        "expires_at": approval_request.expires_at,
+        "options": [],
+        "summary": "",
+    }
+
+    try:
+        doc = frappe.get_doc(approval_request.reference_doctype, approval_request.reference_name)
+    except frappe.DoesNotExistError:
+        out["state"] = "invalid"
+        return out
+
+    if approval_request.status == "Pending" and approval_request.is_expired():
+        out["state"] = "expired"
+        return out
+
+    if approval_request.status == "Pending":
+        out["state"] = "pending"
+        out["summary"] = template.render_summary(doc)
+        out["options"] = [
+            {"number": o.option_number, "label": o.option_label,
+             "is_reject": determine_status_from_option(o.option_label) == "Rejected"}
+            for o in sorted(template.response_options, key=lambda x: x.option_number)
+        ]
+        return out
+
+    if approval_request.status in ("Approved", "Rejected"):
+        out["state"] = "done"
+        option = template.get_option_by_number(approval_request.response_option)
+        out["chosen_label"] = option.option_label if option else approval_request.status
+        return out
+
+    if approval_request.status == "Expired":
+        out["state"] = "expired"
+        return out
+
+    if approval_request.status == "Cancelled":
+        resolved = _get_resolving_request(approval_request)
+        if resolved:
+            out["state"] = "resolved_by_other"
+            out["resolved_status"] = resolved.status
+            out["resolved_at"] = resolved.responded_at
+            if template.already_resolved_template:
+                try:
+                    from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
+                    out["resolved_message"] = frappe.render_template(
+                        template.already_resolved_template, get_template_context(doc)
+                    )
+                except Exception:
+                    pass
+        else:
+            out["state"] = "cancelled"
+        return out
+
+    out["state"] = "error"
+    return out
+
+
+def _get_resolving_request(approval_request):
+    """The request for the same document that was answered (first_response_wins)"""
+    rows = frappe.get_all(
+        "WhatsApp Approval Request",
+        filters={
+            "reference_doctype": approval_request.reference_doctype,
+            "reference_name": approval_request.reference_name,
+            "status": ["in", ["Approved", "Rejected"]],
+            "name": ["!=", approval_request.name],
+            "responded_at": [">=", approval_request.sent_at],
+        },
+        fields=["name"],
+        order_by="responded_at asc",
+        limit=1,
+    )
+    return frappe.get_doc("WhatsApp Approval Request", rows[0].name) if rows else None
+
+
+@frappe.whitelist(allow_guest=True)
+def submit_approval_response(token, option_number, comment=None):
+    """
+    Called by the approval page when a button is pressed. The token is the
+    credential: it is long, random, per-recipient and works only while the
+    request is Pending.
+    """
+    # POST only: link previewers and scanners issue GETs and must never act
+    # (checked by hand because whitelist(methods=...) doesn't exist on v13)
+    if frappe.request and frappe.request.method != "POST":
+        frappe.throw(_("Not allowed"), frappe.PermissionError)
+
+    approval_request = get_request_by_token(token)
+    if not approval_request:
+        frappe.local.response.http_status_code = 404
+        return {"success": False, "error": _("This approval link is not valid.")}
+
+    try:
+        option_number = int(option_number)
+    except (TypeError, ValueError):
+        return {"success": False, "error": _("Invalid option.")}
+
+    comment = (comment or "").strip()[:500] or None
+
+    request = getattr(frappe.local, "request", None)
+    ip = getattr(frappe.local, "request_ip", None) or ""
+    user_agent = (request.headers.get("User-Agent", "") if request else "")[:250]
+    result = process_approval_response(
+        approval_request_name=approval_request.name,
+        option_number=option_number,
+        response_text=comment,
+        response_from=approval_request.recipient_phone,
+    )
+
+    if not result.get("already_processed"):
+        frappe.db.set_value(
+            "WhatsApp Approval Request", approval_request.name,
+            {"response_ip": ip, "response_user_agent": user_agent},
+            update_modified=False,
+        )
+
+    frappe.db.commit()
+
+    if result.get("success"):
+        return {"success": True, "status": result.get("status")}
+
+    return {
+        "success": False,
+        "already_processed": bool(result.get("already_processed")),
+        "error": result.get("error") or _("Could not process the response."),
+    }

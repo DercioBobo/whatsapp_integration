@@ -5,8 +5,8 @@
     "doctype": "DocType",
     "engine": "InnoDB",
     "field_order": [
-        "option_number",
         "option_label",
+        "option_number",
         "column_break_action",
         "action_type",
         "workflow_action",
@@ -18,10 +18,10 @@
         {
             "fieldname": "option_number",
             "fieldtype": "Int",
-            "in_list_view": 1,
-            "label": "Option Number",
-            "reqd": 1,
-            "description": "Number the user will reply with (1, 2, 3, etc.)"
+            "label": "Option ID",
+            "reqd": 0,
+            "description": "Internal id, assigned automatically on save",
+            "read_only": 1
         },
         {
             "fieldname": "option_label",
@@ -29,7 +29,7 @@
             "in_list_view": 1,
             "label": "Option Label",
             "reqd": 1,
-            "description": "Display text (e.g., 'Approve', 'Reject', 'Request More Info')"
+            "description": "Button text on the approval page (e.g., 'Approve', 'Reject')"
         },
         {
             "fieldname": "column_break_action",
@@ -81,7 +81,7 @@
     "index_web_pages_for_search": 0,
     "istable": 1,
     "links": [],
-    "modified": "2024-01-01 00:00:00.000000",
+    "modified": "2026-11-27 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Approval Option",

@@ -28,11 +28,14 @@
         "response_text",
         "column_break_response",
         "response_from",
+        "response_ip",
+        "response_user_agent",
         "section_processing",
         "processed",
         "action_executed",
         "column_break_processing",
-        "error_message"
+        "error_message",
+        "token_hash"
     ],
     "fields": [
         {
@@ -105,7 +108,7 @@
             "fieldtype": "Data",
             "label": "Formatted Phone",
             "read_only": 1,
-            "description": "Phone number formatted for matching incoming responses"
+            "description": "Phone number in the format used for sending"
         },
         {
             "fieldname": "column_break_recipient",
@@ -156,14 +159,14 @@
             "fieldtype": "Int",
             "label": "Response Option",
             "read_only": 1,
-            "description": "The option number selected by the user"
+            "description": "The option selected on the approval page"
         },
         {
             "fieldname": "response_text",
-            "fieldtype": "Data",
-            "label": "Response Text",
+            "fieldtype": "Small Text",
+            "label": "Comment",
             "read_only": 1,
-            "description": "Raw response text from the user"
+            "description": "Comment left by the recipient on the approval page"
         },
         {
             "fieldname": "column_break_response",
@@ -174,7 +177,20 @@
             "fieldtype": "Data",
             "label": "Response From",
             "read_only": 1,
-            "description": "Phone number that sent the response"
+            "description": "Who responded"
+        },
+        {
+            "fieldname": "response_ip",
+            "fieldtype": "Data",
+            "label": "Response IP",
+            "read_only": 1
+        },
+        {
+            "fieldname": "response_user_agent",
+            "fieldtype": "Data",
+            "label": "Response Browser",
+            "read_only": 1,
+            "length": 255
         },
         {
             "fieldname": "section_processing",
@@ -207,12 +223,22 @@
             "label": "Error Message",
             "read_only": 1,
             "description": "Error details if action failed"
+        },
+        {
+            "fieldname": "token_hash",
+            "fieldtype": "Data",
+            "label": "Token Hash",
+            "hidden": 1,
+            "read_only": 1,
+            "no_copy": 1,
+            "search_index": 1,
+            "description": "SHA-256 of the approval link token (the token itself is never stored)"
         }
     ],
     "in_create": 1,
     "index_web_pages_for_search": 0,
     "links": [],
-    "modified": "2024-01-01 00:00:00.000000",
+    "modified": "2026-11-27 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Approval Request",

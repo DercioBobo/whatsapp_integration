@@ -13,17 +13,22 @@ class WhatsAppApprovalTemplate(Document):
         self.validate_trigger()
 
     def validate_options(self):
-        """Ensure option numbers are unique and sequential"""
+        """Options become buttons on the approval page. option_number is an
+        internal id (what the page posts back); auto-assign it when empty."""
         if not self.response_options:
             frappe.throw(_("At least one response option is required"))
 
-        option_numbers = [opt.option_number for opt in self.response_options]
+        used = [opt.option_number for opt in self.response_options if opt.option_number]
+        next_number = max(used or [0]) + 1
+        for opt in self.response_options:
+            if not opt.option_number:
+                opt.option_number = next_number
+                next_number += 1
 
-        # Check for duplicates
+        option_numbers = [opt.option_number for opt in self.response_options]
         if len(option_numbers) != len(set(option_numbers)):
             frappe.throw(_("Option numbers must be unique"))
 
-        # Check for positive numbers
         for num in option_numbers:
             if num < 1:
                 frappe.throw(_("Option numbers must be positive integers"))
@@ -89,36 +94,39 @@ class WhatsAppApprovalTemplate(Document):
 
         return recipients
 
-    def render_message(self, doc):
-        """
-        Render the approval message for a document
-
-        Args:
-            doc: The document to render the message for
-
-        Returns:
-            str: Rendered message with options appended
-        """
+    def render_summary(self, doc):
+        """The message template rendered without the link (shown on the approval page)"""
         from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
 
         context = get_template_context(doc)
+        context["approval_link"] = ""
+        return frappe.render_template(self.message_template, context).strip()
 
-        # Render main message
+    def render_message(self, doc, approval_link=None):
+        """
+        Render the WhatsApp approval message for a document
+
+        Args:
+            doc: The document to render the message for
+            approval_link: The recipient's personal approval page URL. Placed
+                wherever the template uses {{ approval_link }}, otherwise
+                appended after the link intro text.
+
+        Returns:
+            str: Rendered message
+        """
+        from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_notification_rule.whatsapp_notification_rule import get_template_context
+
+        approval_link = approval_link or _("(approval link)")
+
+        context = get_template_context(doc)
+        context["approval_link"] = approval_link
+
         message = frappe.render_template(self.message_template, context)
 
-        # Append response options with customizable text
-        message += "\n\n"
-
-        # Header text (customizable)
-        header_text = self.options_header_text or _("Please respond with:")
-        message += header_text + "\n"
-
-        for option in sorted(self.response_options, key=lambda x: x.option_number):
-            message += "{} - {}\n".format(option.option_number, option.option_label)
-
-        # Footer text (customizable)
-        footer_text = self.options_footer_text or _("Reply with the number of your choice.")
-        message += "\n" + footer_text
+        if "approval_link" not in (self.message_template or ""):
+            intro = self.link_intro_text or _("Review and respond here:")
+            message = "{}\n\n{}\n{}".format(message.rstrip(), intro, approval_link)
 
         return message
 
@@ -148,46 +156,6 @@ class WhatsAppApprovalTemplate(Document):
         context["action_result"] = action_result
 
         return frappe.render_template(self.confirmation_template, context)
-
-    def render_invalid_response_message(self, received_text):
-        """
-        Render the invalid response help message
-
-        Args:
-            received_text: The invalid text received
-
-        Returns:
-            str: Help message or None
-        """
-        if not self.send_invalid_response_help:
-            return None
-
-        # Build options list for context
-        options = []
-        for option in sorted(self.response_options, key=lambda x: x.option_number):
-            options.append({
-                "number": option.option_number,
-                "label": option.option_label
-            })
-
-        if self.invalid_response_template:
-            context = {
-                "received_text": received_text[:50] if received_text else "",
-                "options": options
-            }
-            return frappe.render_template(self.invalid_response_template, context)
-
-        # Default message
-        message = _("Sorry, I didn't understand your response: '{0}'").format(received_text[:50] if received_text else "")
-        message += "\n\n"
-        message += (self.options_header_text or _("Please respond with:")) + "\n"
-
-        for option in options:
-            message += "{} - {}\n".format(option["number"], option["label"])
-
-        message += "\n" + _("Reply with just the number.")
-
-        return message
 
     def get_option_by_number(self, option_number):
         """

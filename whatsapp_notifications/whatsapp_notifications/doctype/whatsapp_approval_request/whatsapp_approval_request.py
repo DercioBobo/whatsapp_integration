@@ -51,8 +51,8 @@ class WhatsAppApprovalRequest(Document):
 
         Args:
             option_number: The option number selected
-            response_text: Raw response text
-            response_from: Phone number that responded
+            response_text: Comment left on the approval page (optional)
+            response_from: Who responded
         """
         self.db_set("response_option", option_number)
         self.db_set("response_text", response_text)
@@ -70,32 +70,6 @@ class WhatsAppApprovalRequest(Document):
         self.db_set("processed", 1)
         self.db_set("action_executed", action_description)
         self.db_set("status", new_status)
-
-
-def get_pending_request_by_phone(formatted_phone):
-    """
-    Find a pending approval request for a phone number
-
-    Args:
-        formatted_phone: Formatted phone number to match
-
-    Returns:
-        WhatsApp Approval Request or None
-    """
-    requests = frappe.get_all(
-        "WhatsApp Approval Request",
-        filters={
-            "status": "Pending",
-            "formatted_phone": formatted_phone
-        },
-        order_by="creation desc",
-        limit=1
-    )
-
-    if requests:
-        return frappe.get_doc("WhatsApp Approval Request", requests[0].name)
-
-    return None
 
 
 def get_pending_requests_for_document(doctype, docname):
