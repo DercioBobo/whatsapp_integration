@@ -14,6 +14,9 @@ frappe.ui.form.on('WhatsApp Approval Template', {
             frm.add_custom_button(__('Preview Message'), function() {
                 preview_approval_message(frm);
             });
+            frm.add_custom_button(__('Send Test'), function() {
+                send_test_approval(frm);
+            });
         }
     },
 
@@ -226,6 +229,98 @@ function preview_approval_message(frm) {
             }
         });
     }, __('Preview Approval Message'), __('Preview'));
+}
+
+function send_test_approval(frm) {
+    if (frm.is_dirty()) {
+        frappe.msgprint(__('Please save the template first'));
+        return;
+    }
+
+    let d = new frappe.ui.Dialog({
+        title: __('Send Test Approval'),
+        fields: [
+            {
+                fieldtype: 'HTML',
+                options: '<p class="text-muted">' + __('Sends the real message with a working link. Responding on the page records the answer but never runs the action on the document.') + '</p>'
+            },
+            {
+                fieldname: 'docname',
+                fieldtype: 'Link',
+                options: frm.doc.document_type,
+                label: __('Document'),
+                reqd: 1
+            },
+            {
+                fieldname: 'phone',
+                fieldtype: 'Data',
+                label: __('Send To (Phone)'),
+                reqd: 1
+            }
+        ],
+        primary_action_label: __('Send Test'),
+        primary_action: function(values) {
+            d.disable_primary_action();
+            frappe.call({
+                method: 'whatsapp_notifications.whatsapp_notifications.api.send_test_approval',
+                args: {
+                    template_name: frm.doc.name,
+                    docname: values.docname,
+                    phone: values.phone
+                },
+                freeze: true,
+                freeze_message: __('Sending test...'),
+                callback: function(r) {
+                    d.enable_primary_action();
+                    let res = r.message || {};
+                    if (!res.success || !(res.links || []).length) {
+                        frappe.msgprint({
+                            title: __('Test Failed'),
+                            message: frappe.utils.escape_html(res.error || __('Unknown error')),
+                            indicator: 'red'
+                        });
+                        return;
+                    }
+                    d.hide();
+                    show_test_result_dialog(res.links[0]);
+                }
+            });
+        }
+    });
+    d.show();
+}
+
+function show_test_result_dialog(info) {
+    let status_html = info.send_error
+        ? '<div class="alert alert-warning">' + __('WhatsApp message failed: {0}', [frappe.utils.escape_html(info.send_error)]) + '<br>' + __('You can still copy the link below and open or send it yourself.') + '</div>'
+        : '<div class="alert alert-success">' + __('Test message sent to {0}.', [frappe.utils.escape_html(info.phone)]) + '</div>';
+
+    let d = new frappe.ui.Dialog({
+        title: __('Test Approval'),
+        fields: [
+            { fieldtype: 'HTML', options: status_html },
+            {
+                fieldname: 'link',
+                fieldtype: 'Data',
+                label: __('Approval Link'),
+                read_only: 1,
+                default: info.link
+            },
+            {
+                fieldtype: 'HTML',
+                options: '<a href="/app/whatsapp-approval-request/' + encodeURIComponent(info.request) + '">' + __('Open request {0}', [frappe.utils.escape_html(info.request)]) + '</a>'
+            }
+        ],
+        primary_action_label: __('Copy Link'),
+        primary_action: function() {
+            frappe.utils.copy_to_clipboard(info.link);
+        },
+        secondary_action_label: __('Open Page'),
+        secondary_action: function() {
+            window.open(info.link, '_blank', 'noopener');
+        }
+    });
+    d.show();
 }
 
 function clear_field_selector(frm, fieldname) {

@@ -8,6 +8,7 @@
     "field_order": [
         "status",
         "approval_template",
+        "is_test",
         "section_reference",
         "reference_doctype",
         "reference_name",
@@ -35,7 +36,8 @@
         "action_executed",
         "column_break_processing",
         "error_message",
-        "token_hash"
+        "token_hash",
+        "approval_token"
     ],
     "fields": [
         {
@@ -56,6 +58,16 @@
             "label": "Approval Template",
             "options": "WhatsApp Approval Template",
             "reqd": 1
+        },
+        {
+            "default": "0",
+            "fieldname": "is_test",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Test",
+            "read_only": 1,
+            "description": "Test request: the link works, but responding never runs the action on the document"
         },
         {
             "fieldname": "section_reference",
@@ -233,12 +245,20 @@
             "no_copy": 1,
             "search_index": 1,
             "description": "SHA-256 of the approval link token (the token itself is never stored)"
+        },
+        {
+            "fieldname": "approval_token",
+            "fieldtype": "Password",
+            "label": "Approval Token",
+            "hidden": 1,
+            "no_copy": 1,
+            "description": "Encrypted link token, used by the 'Copy Approval Link' button"
         }
     ],
     "in_create": 1,
     "index_web_pages_for_search": 0,
     "links": [],
-    "modified": "2026-11-27 12:00:00.000000",
+    "modified": "2026-11-27 13:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Approval Request",

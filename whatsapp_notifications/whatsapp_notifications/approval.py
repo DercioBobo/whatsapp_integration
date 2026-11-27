@@ -87,9 +87,13 @@ def _send_approval_request_background(doctype, docname, template_name, phone=Non
         )
 
 
-def _send_approval_request_impl(doctype, docname, template_name, phone=None):
+def _send_approval_request_impl(doctype, docname, template_name, phone=None, is_test=False):
     """
     Internal implementation of send_approval_request
+
+    is_test: send a real message with a working link, but responding never
+    runs the action, touches the document's timeline, or cancels real
+    pending requests. Template "enabled" and condition are not checked.
     """
     from whatsapp_notifications.whatsapp_notifications.doctype.evolution_api_settings.evolution_api_settings import get_settings
     from whatsapp_notifications.whatsapp_notifications.utils import format_phone_number
@@ -103,14 +107,14 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
 
         # Get template
         template = frappe.get_doc("WhatsApp Approval Template", template_name)
-        if not template.enabled:
+        if not template.enabled and not is_test:
             return {"success": False, "error": _("Approval template is disabled")}
 
         # Get document
         doc = frappe.get_doc(doctype, docname)
 
         # Check condition if set
-        if not template.check_condition(doc):
+        if not is_test and not template.check_condition(doc):
             return {"success": False, "error": _("Condition not met for this document")}
 
         # Get recipients
@@ -124,12 +128,13 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
             return {"success": False, "error": _("Could not determine recipient phone numbers")}
 
         # Cancel previous pending requests if not allowed
-        if not template.allow_multiple_pending:
+        if not template.allow_multiple_pending and not is_test:
             from whatsapp_notifications.whatsapp_notifications.doctype.whatsapp_approval_request.whatsapp_approval_request import cancel_pending_requests_for_document
             cancel_pending_requests_for_document(doctype, docname, "New approval request sent")
 
         # Create approval requests for all recipients
         approval_requests = []
+        sent_links = []
         for recipient_phone in recipients:
             # Format phone number
             formatted_phone = format_phone_number(recipient_phone)
@@ -154,12 +159,21 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
                 "recipient_phone": recipient_phone,
                 "formatted_phone": formatted_phone,
                 "recipient_name": get_recipient_name_from_document(doc),
-                "token_hash": hash_token(token)
+                "token_hash": hash_token(token),
+                # Kept encrypted (Password field) so an admin can copy the
+                # link later, e.g. when the WhatsApp message didn't arrive
+                "approval_token": token,
+                "is_test": 1 if is_test else 0
             })
             approval_request.insert(ignore_permissions=True)
             approval_requests.append(approval_request)
 
-            message = template.render_message(doc, get_approval_link(token))
+            link = get_approval_link(token)
+            sent_links.append({"request": approval_request.name, "phone": recipient_phone, "link": link})
+
+            message = template.render_message(doc, link)
+            if is_test:
+                message = "*[{}]*\n\n{}".format(_("TEST - no action will be taken"), message)
 
             # Send WhatsApp message
             result = send_whatsapp_notification(
@@ -177,17 +191,23 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
                     approval_request.db_set("message_log", result.get("log"))
 
                 # Add timeline comment to the original document
-                from whatsapp_notifications.whatsapp_notifications.utils import add_approval_sent_comment
-                add_approval_sent_comment(
-                    doctype,
-                    docname,
-                    recipient_phone,
-                    template_name,
-                    approval_request.recipient_name
-                )
+                if not is_test:
+                    from whatsapp_notifications.whatsapp_notifications.utils import add_approval_sent_comment
+                    add_approval_sent_comment(
+                        doctype,
+                        docname,
+                        recipient_phone,
+                        template_name,
+                        approval_request.recipient_name
+                    )
             else:
-                # Failed to send
-                approval_request.mark_error(result.get("error", "Failed to send message"))
+                # Failed to send. The request stays Pending so the link
+                # (copyable from the request form) can be sent another way.
+                approval_request.db_set(
+                    "error_message",
+                    _("WhatsApp message failed: {0}").format(result.get("error", "unknown error"))
+                )
+                sent_links[-1]["send_error"] = result.get("error", "Failed to send message")
 
         frappe.db.commit()
 
@@ -205,7 +225,8 @@ def _send_approval_request_impl(doctype, docname, template_name, phone=None):
         return {
             "success": True,
             "approval_requests": [ar.name for ar in approval_requests],
-            "recipients": len(approval_requests)
+            "recipients": len(approval_requests),
+            "links": sent_links
         }
 
     except Exception as e:
@@ -281,8 +302,14 @@ def process_approval_response(approval_request_name, option_number, response_tex
             approval_request.reference_name
         )
 
-        # Execute the action
-        action_result = execute_action_as(doc, option, template.action_user)
+        # Execute the action (test requests never touch the document)
+        if approval_request.is_test:
+            action_result = {
+                "success": True,
+                "description": _("Test response - no action executed ({0})").format(option.option_label)
+            }
+        else:
+            action_result = execute_action_as(doc, option, template.action_user)
 
         if action_result.get("success"):
             # Determine status based on option label
@@ -290,17 +317,18 @@ def process_approval_response(approval_request_name, option_number, response_tex
             approval_request.mark_processed(action_result.get("description"), new_status)
 
             # Add timeline comment to the original document
-            from whatsapp_notifications.whatsapp_notifications.utils import add_approval_response_comment
-            add_approval_response_comment(
-                approval_request.reference_doctype,
-                approval_request.reference_name,
-                response_from,
-                option.option_label,
-                new_status
-            )
+            if not approval_request.is_test:
+                from whatsapp_notifications.whatsapp_notifications.utils import add_approval_response_comment
+                add_approval_response_comment(
+                    approval_request.reference_doctype,
+                    approval_request.reference_name,
+                    response_from,
+                    option.option_label,
+                    new_status
+                )
 
             # If first_response_wins, cancel other pending requests for same document
-            if template.first_response_wins:
+            if template.first_response_wins and not approval_request.is_test:
                 cancel_other_pending_requests(
                     approval_request.reference_doctype,
                     approval_request.reference_name,
@@ -781,6 +809,7 @@ def get_approval_page_state(token):
         "reference_doctype": approval_request.reference_doctype,
         "reference_name": approval_request.reference_name,
         "status": approval_request.status,
+        "is_test": bool(approval_request.is_test),
         "responded_at": approval_request.responded_at,
         "expires_at": approval_request.expires_at,
         "options": [],

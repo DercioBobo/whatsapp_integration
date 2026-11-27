@@ -70,6 +70,10 @@
   <p class="eyebrow">{{ _(reference_doctype) | e }}</p>
   <h1>{{ reference_name | e }}</h1>
 
+  {% if is_test %}
+    <p class="notice warn" style="margin-bottom: 16px"><strong>{{ _("Test") }}</strong>{{ _("This is a test request. Your answer is recorded, but nothing is changed on the document.") }}</p>
+  {% endif %}
+
   {% if state == "pending" %}
     <div class="summary">{{ summary_html | safe }}</div>
 

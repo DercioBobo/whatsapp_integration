@@ -1380,6 +1380,52 @@ def get_doctype_fields(doctype):
 
 
 @frappe.whitelist()
+def send_test_approval(template_name, docname, phone):
+    """
+    Send a test approval request for a document to one phone number.
+    The link and page work normally, but responding never runs the action.
+
+    Returns:
+        dict: success, links [{request, phone, link, send_error?}]
+    """
+    from whatsapp_notifications.whatsapp_notifications.approval import _send_approval_request_impl
+
+    if not frappe.has_permission("WhatsApp Approval Template", "write"):
+        return {"success": False, "error": _("Permission denied")}
+
+    if not (phone or "").strip():
+        return {"success": False, "error": _("Phone number is required")}
+
+    template = frappe.get_doc("WhatsApp Approval Template", template_name)
+    return _send_approval_request_impl(
+        template.document_type, docname, template_name, phone=phone.strip(), is_test=True
+    )
+
+
+@frappe.whitelist()
+def get_approval_request_link(request_name):
+    """
+    Return the approval page link of a pending request, so it can be sent
+    another way when the WhatsApp message didn't arrive.
+    """
+    from whatsapp_notifications.whatsapp_notifications.approval import get_approval_link
+
+    if not frappe.has_permission("WhatsApp Approval Request", "write"):
+        return {"success": False, "error": _("Permission denied")}
+
+    approval_request = frappe.get_doc("WhatsApp Approval Request", request_name)
+
+    if approval_request.status != "Pending":
+        return {"success": False, "error": _("The link only works while the request is Pending (status: {0})").format(approval_request.status)}
+
+    token = approval_request.get_password("approval_token", raise_exception=False)
+    if not token:
+        return {"success": False, "error": _("No link stored for this request (it was created before links were introduced). Send a new approval request.")}
+
+    return {"success": True, "link": get_approval_link(token)}
+
+
+@frappe.whitelist()
 def preview_approval_message(template_name, docname):
     """
     Preview the rendered approval message for a given document.
@@ -1425,6 +1471,9 @@ def process_approval_manually(request_name, option_number, note=None):
                 "success": False,
                 "error": _("Cannot process a request with status '{0}'").format(approval_request.status)
             }
+
+        if approval_request.is_test:
+            return {"success": False, "error": _("Test requests can't be processed manually - no action is ever run for them")}
 
         template = frappe.get_doc("WhatsApp Approval Template", approval_request.approval_template)
         option = template.get_option_by_number(option_number)

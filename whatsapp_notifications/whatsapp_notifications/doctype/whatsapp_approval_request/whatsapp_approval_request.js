@@ -3,13 +3,60 @@
 
 frappe.ui.form.on('WhatsApp Approval Request', {
     refresh: function(frm) {
-        if (frm.doc.status === 'Pending' || frm.doc.status === 'Expired') {
+        if (frm.doc.status === 'Pending') {
+            frm.add_custom_button(__('Copy Approval Link'), function() {
+                frappe.call({
+                    method: 'whatsapp_notifications.whatsapp_notifications.api.get_approval_request_link',
+                    args: { request_name: frm.doc.name },
+                    callback: function(r) {
+                        if (r.message && r.message.success) {
+                            show_approval_link_dialog(r.message.link);
+                        } else {
+                            frappe.msgprint({
+                                title: __('Error'),
+                                message: r.message ? frappe.utils.escape_html(r.message.error) : __('Unknown error'),
+                                indicator: 'red'
+                            });
+                        }
+                    }
+                });
+            });
+
+            if (frm.doc.is_test) {
+                frm.dashboard.set_headline_alert(
+                    __('Test request: responding on the approval page will not run any action.'), 'orange'
+                );
+            }
+        }
+
+        if ((frm.doc.status === 'Pending' || frm.doc.status === 'Expired') && !frm.doc.is_test) {
             frm.add_custom_button(__('Process Manually'), function() {
                 show_manual_process_dialog(frm);
             });
         }
     }
 });
+
+function show_approval_link_dialog(link) {
+    let d = new frappe.ui.Dialog({
+        title: __('Approval Link'),
+        fields: [
+            {
+                fieldname: 'link',
+                fieldtype: 'Data',
+                label: __('Link'),
+                read_only: 1,
+                default: link,
+                description: __('Anyone with this link can respond. Send it only to the approver.')
+            }
+        ],
+        primary_action_label: __('Copy'),
+        primary_action: function() {
+            frappe.utils.copy_to_clipboard(link);
+        }
+    });
+    d.show();
+}
 
 function show_manual_process_dialog(frm) {
     frappe.call({
