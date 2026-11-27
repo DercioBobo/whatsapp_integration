@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ frappe.lang or 'en' }}">
+<html lang="{{ page_lang | e }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -141,7 +141,7 @@
   var errorBox = document.getElementById("error");
   var optionButtons = form.querySelectorAll(".opt");
   var chosen = null;
-  var confirmTemplate = {{ frappe.as_json(_("Confirm: {0}?")) }};
+  var confirmTemplate = {{ _("Confirm: {0}?") | tojson }};
 
   function setBusy(busy) {
     optionButtons.forEach(function (b) { b.disabled = busy; });
@@ -188,12 +188,12 @@
           window.location.reload();
           return;
         }
-        errorBox.textContent = res.error || {{ frappe.as_json(_("Could not process the response.")) }};
+        errorBox.textContent = res.error || {{ _("Could not process the response.") | tojson }};
         errorBox.style.display = "block";
         setBusy(false);
       })
       .catch(function () {
-        errorBox.textContent = {{ frappe.as_json(_("Network error. Please try again.")) }};
+        errorBox.textContent = {{ _("Network error. Please try again.") | tojson }};
         errorBox.style.display = "block";
         setBusy(false);
       });

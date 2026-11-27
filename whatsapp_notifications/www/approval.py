@@ -19,6 +19,7 @@ sitemap = 0
 def get_context(context):
     context.no_cache = 1
     context.no_breadcrumbs = 1
+    context.page_lang = getattr(frappe.local, "lang", None) or "en"
 
     token = (frappe.form_dict.get("t") or "").strip()
     state = get_approval_page_state(token)
