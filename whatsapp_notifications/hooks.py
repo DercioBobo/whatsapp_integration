@@ -239,6 +239,7 @@ jinja = {
         "whatsapp_notifications.whatsapp_notifications.utils.whatsapp_code",
         "whatsapp_notifications.whatsapp_notifications.utils.format_mzn",
         "whatsapp_notifications.whatsapp_notifications.utils.format_phone_number",
-        "whatsapp_notifications.whatsapp_notifications.utils.strip_accents"
+        "whatsapp_notifications.whatsapp_notifications.utils.strip_accents",
+        "whatsapp_notifications.whatsapp_notifications.approval.approval_url"
     ]
 }

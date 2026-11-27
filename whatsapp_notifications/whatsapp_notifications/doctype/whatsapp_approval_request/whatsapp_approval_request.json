@@ -8,6 +8,7 @@
     "field_order": [
         "status",
         "approval_template",
+        "channel",
         "is_test",
         "section_reference",
         "reference_doctype",
@@ -58,6 +59,17 @@
             "label": "Approval Template",
             "options": "WhatsApp Approval Template",
             "reqd": 1
+        },
+        {
+            "default": "WhatsApp",
+            "fieldname": "channel",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Channel",
+            "options": "WhatsApp\nEmail",
+            "read_only": 1,
+            "description": "Email: link created by approval_url() in a Frappe Notification"
         },
         {
             "default": "0",
@@ -112,8 +124,8 @@
             "fieldtype": "Data",
             "in_list_view": 1,
             "label": "Recipient Phone",
-            "reqd": 1,
-            "description": "Original phone number"
+            "reqd": 0,
+            "description": "Original phone number (empty for Email requests)"
         },
         {
             "fieldname": "formatted_phone",
@@ -258,7 +270,7 @@
     "in_create": 1,
     "index_web_pages_for_search": 0,
     "links": [],
-    "modified": "2026-11-27 13:00:00.000000",
+    "modified": "2026-11-27 14:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Approval Request",

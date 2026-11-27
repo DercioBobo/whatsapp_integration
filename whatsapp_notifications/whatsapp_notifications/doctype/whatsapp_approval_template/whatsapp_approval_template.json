@@ -109,9 +109,9 @@
             "fieldname": "recipient_type",
             "fieldtype": "Select",
             "label": "Recipient Type",
-            "options": "Field Value\nFixed Numbers\nBoth",
+            "options": "Field Value\nFixed Numbers\nBoth\nNone",
             "default": "Field Value",
-            "description": "Who receives the approval request"
+            "description": "Who receives the approval request on WhatsApp. Choose 'None' when the link is only sent by email, using {{ approval_url(doc) }} in a Frappe Notification (and leave Trigger Event empty)."
         },
         {
             "fieldname": "phone_field",
@@ -245,7 +245,7 @@
             "link_fieldname": "approval_template"
         }
     ],
-    "modified": "2026-11-27 12:00:00.000000",
+    "modified": "2026-11-27 14:00:00.000000",
     "modified_by": "Administrator",
     "module": "WhatsApp Notifications",
     "name": "WhatsApp Approval Template",

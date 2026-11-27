@@ -589,6 +589,10 @@ def send_confirmation_message(template, doc, approval_request, option_label, act
     """
     from whatsapp_notifications.whatsapp_notifications.api import send_whatsapp_notification
 
+    # Email-link requests have no phone to confirm to
+    if not approval_request.recipient_phone:
+        return
+
     try:
         message = template.render_confirmation(doc, option_label, action_result)
 
@@ -917,7 +921,7 @@ def submit_approval_response(token, option_number, comment=None):
         approval_request_name=approval_request.name,
         option_number=option_number,
         response_text=comment,
-        response_from=approval_request.recipient_phone,
+        response_from=approval_request.recipient_phone or _("Email link"),
     )
 
     if not result.get("already_processed"):
@@ -937,3 +941,97 @@ def submit_approval_response(token, option_number, comment=None):
         "already_processed": bool(result.get("already_processed")),
         "error": result.get("error") or _("Could not process the response."),
     }
+
+
+# ---------------------------------------------------------------------------
+# Email: approval link inside a standard Frappe Notification
+# ---------------------------------------------------------------------------
+
+def approval_url(doc, template_name=None):
+    """
+    Jinja method (registered in hooks) for use in a Frappe Notification:
+
+        <a href="{{ approval_url(doc) }}">Review and approve</a>
+
+    The approval template is found from the document's doctype (the enabled
+    template for it; the most recently modified if there are several).
+    Pass template_name to choose one explicitly.
+
+    Returns the approval page URL for this document.
+    One "Email" approval request is kept per document + template: while it is
+    Pending and not expired its link is reused (re-renders and resends don't
+    pile up requests); otherwise a new one is created. All recipients of the
+    email share this link.
+    """
+    try:
+        doctype = doc.get("doctype")
+        docname = doc.get("name")
+        if not doctype or not docname:
+            return ""
+
+        if not template_name:
+            templates = frappe.get_all(
+                "WhatsApp Approval Template",
+                filters={"enabled": 1, "document_type": doctype},
+                pluck="name",
+                order_by="modified desc",
+            )
+            if not templates:
+                frappe.log_error(
+                    "approval_url: no enabled WhatsApp Approval Template for {}".format(doctype),
+                    "WhatsApp Approval Email Link"
+                )
+                return ""
+            template_name = templates[0]
+
+        template = frappe.get_cached_doc("WhatsApp Approval Template", template_name)
+        if template.document_type != doctype:
+            frappe.log_error(
+                "approval_url: template '{}' is for {}, not {}".format(
+                    template_name, template.document_type, doctype
+                ),
+                "WhatsApp Approval Email Link"
+            )
+            return ""
+
+        existing = frappe.get_all(
+            "WhatsApp Approval Request",
+            filters={
+                "channel": "Email",
+                "approval_template": template_name,
+                "reference_doctype": doctype,
+                "reference_name": docname,
+                "status": "Pending",
+                "expires_at": [">", now_datetime()],
+            },
+            fields=["name"],
+            order_by="creation desc",
+            limit=1,
+        )
+        if existing:
+            request = frappe.get_doc("WhatsApp Approval Request", existing[0].name)
+            token = request.get_password("approval_token", raise_exception=False)
+            if token:
+                return get_approval_link(token)
+
+        token = generate_token()
+        frappe.get_doc({
+            "doctype": "WhatsApp Approval Request",
+            "status": "Pending",
+            "channel": "Email",
+            "approval_template": template_name,
+            "reference_doctype": doctype,
+            "reference_name": docname,
+            "recipient_name": _("Email"),
+            "token_hash": hash_token(token),
+            "approval_token": token,
+        }).insert(ignore_permissions=True)
+
+        return get_approval_link(token)
+
+    except Exception as e:
+        frappe.log_error(
+            "approval_url({}, {}): {}".format(doc.get("name"), template_name, str(e)),
+            "WhatsApp Approval Email Link"
+        )
+        return ""
